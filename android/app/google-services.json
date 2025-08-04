@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "763851501486",
+    "project_id": "schedulelink-28446",
+    "storage_bucket": "schedulelink-28446.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:763851501486:android:f9ad52336596a43827223f",
+        "android_client_info": {
+          "package_name": "com.example.schedulelink"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZAFvH2PzUVQ38FNnw_7DyegBaHf8CDgw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

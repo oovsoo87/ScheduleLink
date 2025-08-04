@@ -1,0 +1,287 @@
+// lib/add_shift_page.dart
+
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'models/shift_model.dart';
+import 'models/user_profile.dart';
+import 'models/site_model.dart';
+
+class AddShiftPage extends StatefulWidget {
+  final Shift? shiftToEdit;
+  final DateTime? initialDate;
+
+  const AddShiftPage({super.key, this.shiftToEdit, this.initialDate});
+
+  @override
+  State<AddShiftPage> createState() => _AddShiftPageState();
+}
+
+class _AddShiftPageState extends State<AddShiftPage> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _notesController;
+
+  List<UserProfile> _staffList = [];
+  List<Site> _siteList = [];
+  UserProfile? _selectedStaff;
+  Site? _selectedSite;
+  DateTime? _selectedDate;
+  TimeOfDay? _startTime;
+  TimeOfDay? _endTime;
+  bool _isLoading = true;
+  bool _isLocked = false;
+
+  bool get _isEditing => widget.shiftToEdit != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = widget.initialDate;
+    _notesController = TextEditingController();
+    _fetchDataAndPopulateForm();
+  }
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchDataAndPopulateForm() async {
+    try {
+      final staffFuture = FirebaseFirestore.instance.collection('users').where('isActive', isEqualTo: true).get();
+      final sitesFuture = FirebaseFirestore.instance.collection('sites').get();
+
+      final results = await Future.wait([staffFuture, sitesFuture]);
+      final staffSnapshot = results[0] as QuerySnapshot;
+      final sitesSnapshot = results[1] as QuerySnapshot;
+      final staff = staffSnapshot.docs.map((doc) => UserProfile.fromFirestore(doc)).toList();
+      final sites = sitesSnapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
+
+      if (mounted) {
+        setState(() {
+          _staffList = staff;
+          _siteList = sites;
+          if (_isEditing) {
+            final shift = widget.shiftToEdit!;
+            _selectedDate = shift.startTime;
+            _startTime = TimeOfDay.fromDateTime(shift.startTime);
+            _endTime = TimeOfDay.fromDateTime(shift.endTime);
+            _notesController.text = shift.notes ?? '';
+
+            if (_staffList.isNotEmpty) { try { _selectedStaff = _staffList.firstWhere((s) => s.uid == shift.userId); } catch (e) { _selectedStaff = null; } }
+            if (_siteList.isNotEmpty && shift.siteId.isNotEmpty) { try { _selectedSite = _siteList.firstWhere((s) => s.id == shift.siteId); } catch (e) { _selectedSite = null; } }
+
+            if (widget.shiftToEdit!.startTime.isBefore(DateTime.now())) {
+              _isLocked = true;
+            }
+          }
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error fetching data: $e")));
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _saveShift() async {
+    if (!_formKey.currentState!.validate() || _selectedStaff == null || _selectedSite == null || _selectedDate == null || _startTime == null || _endTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
+      return;
+    }
+
+    final startDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _startTime!.hour, _startTime!.minute);
+
+    if (!_isEditing && startDateTime.isBefore(DateTime.now())) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Cannot create a shift that starts in the past.'), backgroundColor: Colors.red));
+      return;
+    }
+
+    final double startTimeInMinutes = _startTime!.hour * 60.0 + _startTime!.minute;
+    final double endTimeInMinutes = _endTime!.hour * 60.0 + _endTime!.minute;
+    if (endTimeInMinutes <= startTimeInMinutes) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: End time must be after start time.'), backgroundColor: Colors.red));
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final endDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _endTime!.hour, _endTime!.minute);
+
+    final shiftToSave = Shift(
+      userId: _selectedStaff!.uid,
+      startTime: startDateTime,
+      endTime: endDateTime,
+      shiftId: _isEditing ? widget.shiftToEdit!.shiftId : FirebaseFirestore.instance.collection('schedules').doc().id,
+      siteId: _selectedSite!.id,
+      notes: _notesController.text.trim(),
+    );
+
+    final bool hasConflict = await _checkForConflicts(shiftToSave);
+    if (hasConflict) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: This shift overlaps with an existing shift for this employee.'), backgroundColor: Colors.red));
+      }
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    final startOfWeek = _selectedDate!.subtract(Duration(days: _selectedDate!.weekday - 1));
+    final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+
+    final scheduleQuery = await FirebaseFirestore.instance.collection('schedules').where('weekStartDate', isEqualTo: weekStartDate).limit(1).get();
+
+    if (scheduleQuery.docs.isNotEmpty) {
+      final scheduleDocRef = scheduleQuery.docs.first.reference;
+      if (_isEditing) {
+        final originalShiftMap = widget.shiftToEdit!.toMap();
+        await scheduleDocRef.update({'shifts': FieldValue.arrayRemove([originalShiftMap])});
+      }
+      await scheduleDocRef.update({'shifts': FieldValue.arrayUnion([shiftToSave.toMap()])});
+    } else {
+      await FirebaseFirestore.instance.collection('schedules').add({
+        'weekStartDate': weekStartDate,
+        'shifts': [shiftToSave.toMap()],
+        'published': true,
+        'siteId': _selectedSite!.id,
+      });
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Shift ${ _isEditing ? 'updated' : 'added' } successfully!')));
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<bool> _checkForConflicts(Shift shiftToCheck) async {
+    final startOfWeek = shiftToCheck.startTime.subtract(Duration(days: shiftToCheck.startTime.weekday - 1));
+    final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+    final scheduleQuery = await FirebaseFirestore.instance.collection('schedules').where('weekStartDate', isEqualTo: weekStartDate).limit(1).get();
+    if (scheduleQuery.docs.isEmpty) return false;
+    final data = scheduleQuery.docs.first.data() as Map<String, dynamic>;
+    final allShiftsData = data['shifts'] as List<dynamic>? ?? [];
+    for (var shiftData in allShiftsData) {
+      final existingShift = Shift.fromMap(shiftData);
+      if (existingShift.userId == shiftToCheck.userId) {
+        if (_isEditing && existingShift.shiftId == shiftToCheck.shiftId) continue;
+        bool overlaps = !(shiftToCheck.endTime.isBefore(existingShift.startTime) || shiftToCheck.startTime.isAfter(existingShift.endTime));
+        if (shiftToCheck.endTime.isAtSameMomentAs(existingShift.startTime) || shiftToCheck.startTime.isAtSameMomentAs(existingShift.endTime)) {
+          overlaps = false;
+        }
+        if (overlaps) return true;
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(_isEditing ? (_isLocked ? 'View Shift' : 'Edit Shift') : 'Add New Shift')),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(16.0),
+          children: [
+            if (_isLocked)
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5), borderRadius: BorderRadius.circular(8)),
+                child: const Row(
+                  children: [
+                    Icon(Icons.lock_outline, color: Colors.grey),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('This shift is in the past and can no longer be edited.')),
+                  ],
+                ),
+              ),
+            DropdownButtonFormField<Site>(
+              value: _selectedSite,
+              hint: const Text('Select Site'),
+              onChanged: _isLocked ? null : (Site? newValue) => setState(() => _selectedSite = newValue),
+              items: _siteList.map((site) => DropdownMenuItem<Site>(value: site, child: Text(site.siteName))).toList(),
+              validator: (value) => value == null ? 'Please select a site' : null,
+              decoration: const InputDecoration(labelText: 'Work Site'),
+            ),
+            if (_selectedSite != null && _selectedSite!.presetShifts.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              DropdownButtonFormField<Map<String, String>>(
+                hint: const Text('Select a Preset Shift (Optional)'),
+                onChanged: _isLocked ? null : (preset) {
+                  if (preset == null) return;
+                  final startTimeString = preset['startTime'];
+                  final endTimeString = preset['endTime'];
+                  if (startTimeString != null && endTimeString != null) {
+                    try {
+                      final startParts = startTimeString.split(':').map(int.parse).toList();
+                      final endParts = endTimeString.split(':').map(int.parse).toList();
+                      setState(() {
+                        _startTime = TimeOfDay(hour: startParts[0], minute: startParts[1]);
+                        _endTime = TimeOfDay(hour: endParts[0], minute: endParts[1]);
+                      });
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not parse preset time.'), backgroundColor: Colors.red));
+                    }
+                  }
+                },
+                items: _selectedSite!.presetShifts.map((preset) => DropdownMenuItem<Map<String, String>>(value: preset, child: Text(preset['name']!))).toList(),
+                decoration: const InputDecoration(labelText: 'Preset Shift'),
+              ),
+            ],
+            const SizedBox(height: 16),
+            DropdownButtonFormField<UserProfile>(
+              value: _selectedStaff,
+              hint: const Text('Select Employee'),
+              onChanged: _isLocked ? null : (UserProfile? newValue) => setState(() => _selectedStaff = newValue),
+              items: _staffList.map((user) { final name = '${user.firstName} ${user.lastName}'.trim(); return DropdownMenuItem<UserProfile>(value: user, child: Text(name.isEmpty ? user.email : name)); }).toList(),
+              validator: (value) => value == null ? 'Please select an employee' : null,
+              decoration: const InputDecoration(labelText: 'Employee'),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              title: const Text('Shift Date'),
+              subtitle: Text(_selectedDate == null ? 'Not set' : DateFormat.yMMMMd().format(_selectedDate!)),
+              trailing: const Icon(Icons.calendar_today),
+              onTap: _isLocked ? null : () async {
+                final now = DateTime.now();
+                final today = DateTime(now.year, now.month, now.day);
+                var selectableFirstDate = today;
+                if (_isEditing && widget.shiftToEdit!.startTime.isBefore(today)) {
+                  selectableFirstDate = DateTime(widget.shiftToEdit!.startTime.year, widget.shiftToEdit!.startTime.month, widget.shiftToEdit!.startTime.day);
+                }
+                final date = await showDatePicker(context: context, initialDate: _selectedDate ?? today, firstDate: selectableFirstDate, lastDate: today.add(const Duration(days: 365)));
+                if (date != null) setState(() => _selectedDate = date);
+              },
+            ),
+            ListTile(
+              title: const Text('Start Time'),
+              subtitle: Text(_startTime == null ? 'Not set' : _startTime!.format(context)),
+              trailing: const Icon(Icons.access_time),
+              onTap: _isLocked ? null : () async { final time = await showTimePicker(context: context, initialTime: _startTime ?? TimeOfDay.now()); if (time != null) setState(() => _startTime = time); },
+            ),
+            ListTile(
+              title: const Text('End Time'),
+              subtitle: Text(_endTime == null ? 'Not set' : _endTime!.format(context)),
+              trailing: const Icon(Icons.access_time),
+              onTap: _isLocked ? null : () async { final time = await showTimePicker(context: context, initialTime: _endTime ?? TimeOfDay.now()); if (time != null) setState(() => _endTime = time); },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _notesController,
+              decoration: const InputDecoration(labelText: 'Shift Notes (Optional)', border: OutlineInputBorder(), hintText: 'Add any important details...'),
+              maxLines: 3,
+              readOnly: _isLocked,
+            ),
+            const SizedBox(height: 32),
+            if (!_isLocked) ElevatedButton(onPressed: _isLoading ? null : _saveShift, child: const Text('Save Shift')),
+          ],
+        ),
+      ),
+    );
+  }
+}
