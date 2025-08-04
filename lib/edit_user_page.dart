@@ -23,7 +23,9 @@ class _EditUserPageState extends State<EditUserPage> {
   late final TextEditingController _lastNameController;
   late final TextEditingController _phoneController;
   late final TextEditingController _quotaController;
-  late final TextEditingController _dailyHoursController; // <-- NEW
+  late final TextEditingController _dailyHoursController;
+  late final TextEditingController _payrollIdController;
+  late final TextEditingController _siteClockInNumberController; // <-- NEW
 
   List<Site> _siteList = [];
   List<UserProfile> _supervisorList = [];
@@ -43,7 +45,9 @@ class _EditUserPageState extends State<EditUserPage> {
     _lastNameController = TextEditingController(text: widget.userProfile.lastName);
     _phoneController = TextEditingController(text: widget.userProfile.phoneNumber);
     _quotaController = TextEditingController(text: widget.userProfile.timeOffQuota.toString());
-    _dailyHoursController = TextEditingController(text: widget.userProfile.defaultDailyHours.toString()); // <-- NEW
+    _dailyHoursController = TextEditingController(text: widget.userProfile.defaultDailyHours.toString());
+    _payrollIdController = TextEditingController(text: widget.userProfile.payrollId ?? '');
+    _siteClockInNumberController = TextEditingController(text: widget.userProfile.siteClockInNumber ?? ''); // <-- NEW
 
     _selectedSiteIds = List<String>.from(widget.userProfile.assignedSiteIds);
     _selectedSupervisorId = widget.userProfile.directSupervisorId;
@@ -80,7 +84,9 @@ class _EditUserPageState extends State<EditUserPage> {
     _lastNameController.dispose();
     _phoneController.dispose();
     _quotaController.dispose();
-    _dailyHoursController.dispose(); // <-- NEW
+    _dailyHoursController.dispose();
+    _payrollIdController.dispose();
+    _siteClockInNumberController.dispose(); // <-- NEW
     super.dispose();
   }
 
@@ -90,11 +96,13 @@ class _EditUserPageState extends State<EditUserPage> {
       try {
         await FirebaseFirestore.instance.collection('users').doc(widget.userProfile.uid).update({
           'role': _selectedRole,
-          'firstName': _firstNameController.text,
-          'lastName': _lastNameController.text,
-          'phoneNumber': _phoneController.text,
+          'firstName': _firstNameController.text.trim(),
+          'lastName': _lastNameController.text.trim(),
+          'phoneNumber': _phoneController.text.trim(),
           'timeOffQuota': double.tryParse(_quotaController.text) ?? 0.0,
-          'defaultDailyHours': double.tryParse(_dailyHoursController.text) ?? 8.0, // <-- NEW
+          'defaultDailyHours': double.tryParse(_dailyHoursController.text) ?? 8.0,
+          'payrollId': _payrollIdController.text.trim(),
+          'siteClockInNumber': _siteClockInNumberController.text.trim(), // <-- NEW
           'assignedSiteIds': _selectedSiteIds,
           'directSupervisorId': _selectedSupervisorId,
           'directAdminId': _selectedAdminId,
@@ -139,13 +147,26 @@ class _EditUserPageState extends State<EditUserPage> {
             const SizedBox(height: 16),
 
             TextFormField(
+              controller: _payrollIdController,
+              decoration: const InputDecoration(labelText: 'Payroll ID (Optional)'),
+            ),
+            const SizedBox(height: 16),
+
+            // --- NEW: Site Clock-in Number Field ---
+            TextFormField(
+              controller: _siteClockInNumberController,
+              decoration: const InputDecoration(labelText: 'Site Clock-in Number (Optional)'),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 16),
+
+            TextFormField(
               controller: _quotaController,
               decoration: const InputDecoration(labelText: 'Time Off Quota (in hours)'),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
             const SizedBox(height: 16),
 
-            // --- NEW: Default Daily Hours Field ---
             TextFormField(
               controller: _dailyHoursController,
               decoration: const InputDecoration(labelText: 'Default Hours Per Day'),

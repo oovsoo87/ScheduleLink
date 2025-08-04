@@ -14,7 +14,9 @@ class UserProfile {
   final String? directSupervisorId;
   final String? directAdminId;
   final double timeOffQuota;
-  final double defaultDailyHours; // <-- NEW
+  final double defaultDailyHours;
+  final String? payrollId;
+  final String? siteClockInNumber; // <-- NEW
 
   UserProfile({
     required this.uid,
@@ -28,10 +30,11 @@ class UserProfile {
     this.directSupervisorId,
     this.directAdminId,
     this.timeOffQuota = 0.0,
-    this.defaultDailyHours = 8.0, // <-- NEW (default to 8)
+    this.defaultDailyHours = 8.0,
+    this.payrollId,
+    this.siteClockInNumber, // <-- NEW
   });
 
-  // Factory constructor to create a UserProfile from a Firestore document
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return UserProfile(
@@ -46,11 +49,12 @@ class UserProfile {
       directSupervisorId: data['directSupervisorId'],
       directAdminId: data['directAdminId'],
       timeOffQuota: (data['timeOffQuota'] ?? 0.0).toDouble(),
-      defaultDailyHours: (data['defaultDailyHours'] ?? 8.0).toDouble(), // <-- NEW
+      defaultDailyHours: (data['defaultDailyHours'] ?? 8.0).toDouble(),
+      payrollId: data['payrollId'],
+      siteClockInNumber: data['siteClockInNumber'], // <-- NEW
     );
   }
 
-  // Method to convert UserProfile instance to a map for Firestore
   Map<String, dynamic> toMap() {
     return {
       'email': email,
@@ -63,7 +67,9 @@ class UserProfile {
       'directSupervisorId': directSupervisorId,
       'directAdminId': directAdminId,
       'timeOffQuota': timeOffQuota,
-      'defaultDailyHours': defaultDailyHours, // <-- NEW
+      'defaultDailyHours': defaultDailyHours,
+      'payrollId': payrollId,
+      'siteClockInNumber': siteClockInNumber, // <-- NEW
     };
   }
 }

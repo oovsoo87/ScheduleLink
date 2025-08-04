@@ -5,7 +5,6 @@ import 'manage_sites_page.dart';
 import 'manage_staff_page.dart';
 import 'reports_page.dart';
 import 'approve_time_off_page.dart';
-import 'temp_pdf_generator_page.dart';
 
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
@@ -56,16 +55,6 @@ class AdminPage extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.push(context, MaterialPageRoute(builder: (context) => const ApproveTimeOffPage()));
-            },
-          ),
-          const Divider(),
-          ListTile(
-            title: const Text('Generate Pricing PDF'),
-            subtitle: const Text('Temporary tool for one-off PDF generation'),
-            leading: const Icon(Icons.picture_as_pdf_outlined),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(context, MaterialPageRoute(builder: (context) => const TempPdfGeneratorPage()));
             },
           ),
         ],
