@@ -86,11 +86,14 @@ class _ProjectionsReportPageState extends State<ProjectionsReportPage> {
   Future<double> _calculateScheduledHours(String siteId, DateTime date) async {
     DateTime startOfWeek = date.subtract(Duration(days: date.weekday - 1));
     DateTime startOfDay = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
-    DateTime endOfDay = startOfDay.add(const Duration(days: 1));
+
+    // --- FIX APPLIED HERE ---
+    // The query is simplified to use a direct equality check.
     final scheduleQuery = await FirebaseFirestore.instance.collection('schedules')
         .where('siteId', isEqualTo: siteId)
-        .where('weekStartDate', isGreaterThanOrEqualTo: startOfDay)
-        .where('weekStartDate', isLessThan: endOfDay).limit(1).get();
+        .where('weekStartDate', isEqualTo: startOfDay)
+        .limit(1).get();
+    // --- END FIX ---
 
     double totalMinutes = 0;
     if (scheduleQuery.docs.isNotEmpty) {

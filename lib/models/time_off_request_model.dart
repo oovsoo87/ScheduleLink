@@ -10,6 +10,9 @@ class TimeOffRequest {
   final DateTime endDate;
   final String reason;
   final String status;
+  final Timestamp dateRequested; // Added
+  final List<String> approverIds; // Added
+  final List<String> approvedBy;  // Added
 
   TimeOffRequest({
     required this.id,
@@ -19,6 +22,9 @@ class TimeOffRequest {
     required this.endDate,
     required this.reason,
     required this.status,
+    required this.dateRequested, // Added
+    required this.approverIds,   // Added
+    required this.approvedBy,    // Added
   });
 
   factory TimeOffRequest.fromFirestore(DocumentSnapshot doc) {
@@ -31,6 +37,10 @@ class TimeOffRequest {
       endDate: (data['endDate'] as Timestamp).toDate(),
       reason: data['reason'] ?? 'No reason provided.',
       status: data['status'] ?? 'pending',
+      // Safely handle new fields that might not exist on old documents
+      dateRequested: data['dateRequested'] ?? Timestamp.now(),
+      approverIds: List<String>.from(data['approverIds'] ?? []),
+      approvedBy: List<String>.from(data['approvedBy'] ?? []),
     );
   }
 }

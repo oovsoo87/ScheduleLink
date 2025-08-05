@@ -60,11 +60,13 @@ class _TimeOffReportPageState extends State<TimeOffReportPage> {
     }
   }
 
+  // --- THIS FUNCTION CONTAINS THE EFFICIENCY IMPROVEMENT ---
   Future<List<TimeOffReportRow>> _fetchReportData() async {
     if (_selectedDateRange == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a date range.')));
       return [];
     }
+    // Get requests within the selected date range for the report
     Query query = FirebaseFirestore.instance.collection('timeOffRequests')
         .where('startDate', isGreaterThanOrEqualTo: _selectedDateRange!.start)
         .where('startDate', isLessThanOrEqualTo: _selectedDateRange!.end.add(const Duration(days: 1)));
@@ -80,8 +82,12 @@ class _TimeOffReportPageState extends State<TimeOffReportPage> {
     final usersSnapshot = await FirebaseFirestore.instance.collection('users').where(FieldPath.documentId, whereIn: userIds).get();
     final userMap = {for (var doc in usersSnapshot.docs) doc.id: UserProfile.fromFirestore(doc)};
 
+    // Fetch only the approved requests needed to calculate the quota, up to the end of the report period.
     final allApprovedRequestsSnapshot = await FirebaseFirestore.instance.collection('timeOffRequests')
-        .where('userId', whereIn: userIds).where('status', isEqualTo: 'approved').get();
+        .where('userId', whereIn: userIds)
+        .where('status', isEqualTo: 'approved')
+        .where('startDate', isLessThanOrEqualTo: _selectedDateRange!.end) // This is the efficient change
+        .get();
     final allApprovedRequests = allApprovedRequestsSnapshot.docs.map((doc) => TimeOffRequest.fromFirestore(doc)).toList();
 
     List<TimeOffReportRow> reportData = [];
@@ -89,6 +95,7 @@ class _TimeOffReportPageState extends State<TimeOffReportPage> {
       if (userMap.containsKey(request.userId)) {
         final user = userMap[request.userId]!;
         double totalUsedHours = 0;
+        // Calculate used hours based on the efficiently fetched requests
         allApprovedRequests.where((r) => r.userId == user.uid).forEach((approvedReq) {
           final days = approvedReq.endDate.difference(approvedReq.startDate).inDays + 1;
           totalUsedHours += days * user.defaultDailyHours;

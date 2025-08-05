@@ -6,7 +6,7 @@ import 'projections_report_page.dart';
 import 'scheduled_vs_clocked_report_page.dart';
 import 'weekly_grid_report_page.dart';
 import 'payroll_page.dart';
-import 'time_off_report_page.dart'; // Make sure this import is present
+import 'time_off_report_page.dart';
 
 class ReportsPage extends StatelessWidget {
   const ReportsPage({super.key});
@@ -22,7 +22,8 @@ class ReportsPage extends StatelessWidget {
         children: [
           Card(
             child: ListTile(
-              leading: const Icon(Icons.payments_outlined, color: Colors.teal),
+              // REMOVED: color: Colors.teal
+              leading: const Icon(Icons.payments_outlined),
               title: const Text('Payroll Export'),
               subtitle: const Text('Generate CSV files for Sage and Xero.'),
               onTap: () {
@@ -32,7 +33,8 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.beach_access_outlined, color: Colors.cyan),
+              // REMOVED: color: Colors.cyan
+              leading: const Icon(Icons.beach_access_outlined),
               title: const Text('Time Off Records'),
               subtitle: const Text('CSV/PDF of all approved/denied time off.'),
               onTap: () {
@@ -42,7 +44,8 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.calendar_view_week, color: Colors.green),
+              // REMOVED: color: Colors.green
+              leading: const Icon(Icons.calendar_view_week),
               title: const Text('Weekly Schedule PDF'),
               subtitle: const Text('Printable grid view of the week\'s schedule.'),
               onTap: () {
@@ -52,7 +55,8 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.assessment_outlined, color: Colors.orange),
+              // REMOVED: color: Colors.orange
+              leading: const Icon(Icons.assessment_outlined),
               title: const Text('Projections vs. Scheduled'),
               subtitle: const Text('PDF comparing projected vs. scheduled hours.'),
               onTap: () {
@@ -62,7 +66,8 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.compare_arrows, color: Colors.purple),
+              // REMOVED: color: Colors.purple
+              leading: const Icon(Icons.compare_arrows),
               title: const Text('Scheduled vs. Clocked-In'),
               subtitle: const Text('PDF comparing scheduled vs. actual hours.'),
               onTap: () {
@@ -72,7 +77,8 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.timer_outlined, color: Colors.blue),
+              // REMOVED: color: Colors.blue
+              leading: const Icon(Icons.timer_outlined),
               title: const Text('Detailed Clocker Report'),
               subtitle: const Text('CSV/PDF of all clock-in/out entries.'),
               onTap: () {

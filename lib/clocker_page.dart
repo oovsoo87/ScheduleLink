@@ -90,7 +90,11 @@ class _ClockerPageState extends State<ClockerPage> {
   Future<ClockInRulesResult> _fetchClockInRules() async {
     if (_currentUser == null) return ClockInRulesResult(canClockIn: false, reason: 'Not logged in.');
 
-    final now = DateTime.now();
+    // --- FIX APPLIED HERE ---
+    // Convert local time to UTC immediately for consistent comparisons.
+    final now = DateTime.now().toUtc();
+    // --- END FIX ---
+
     final today = DateTime(now.year, now.month, now.day);
     final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
     final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
@@ -105,7 +109,7 @@ class _ClockerPageState extends State<ClockerPage> {
     final allShiftsInWeek = (data['shifts'] as List<dynamic>? ?? []).map((s) => Shift.fromMap(s)).toList();
 
     final todayShifts = allShiftsInWeek
-        .where((s) => s.userId == _currentUser!.uid && _isSameDay(s.startTime, now))
+        .where((s) => s.userId == _currentUser!.uid && _isSameDay(s.startTime, now)) // Now comparing UTC to UTC
         .toList();
 
     if (todayShifts.isEmpty) {
@@ -175,7 +179,6 @@ class _ClockerPageState extends State<ClockerPage> {
     );
   }
 
-  // --- THIS FUNCTION IS COMPLETELY REBUILT FOR THE NEW LOGIC ---
   Future<void> _clockIn() async {
     if (_currentUser == null) return;
     try {
