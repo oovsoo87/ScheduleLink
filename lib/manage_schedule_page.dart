@@ -17,6 +17,11 @@ class ManageSchedulePage extends StatefulWidget {
   State<ManageSchedulePage> createState() => _ManageSchedulePageState();
 }
 
+// Helper function needed by this page
+bool _isSameDay(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
 class _ManageSchedulePageState extends State<ManageSchedulePage> {
   late final ValueNotifier<List<Shift>> _selectedShifts;
   Map<DateTime, List<Shift>> _allShiftsByDay = {};
@@ -109,6 +114,55 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     }
   }
 
+  Future<void> _deleteSingleShift(Shift shiftToDelete) async {
+    final startOfWeek = _getStartOfWeek(shiftToDelete.startTime);
+    final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+
+    final scheduleQuery = await FirebaseFirestore.instance.collection('schedules').where('weekStartDate', isEqualTo: weekStartDate).limit(1).get();
+
+    if (scheduleQuery.docs.isNotEmpty) {
+      final scheduleDocRef = scheduleQuery.docs.first.reference;
+      await scheduleDocRef.update({'shifts': FieldValue.arrayRemove([shiftToDelete.toMap()])});
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Shift deleted.'), backgroundColor: Colors.green));
+      _fetchData();
+    }
+  }
+
+  Future<void> _deleteDayShifts(DateTime dayToDelete) async {
+    final startOfWeek = _getStartOfWeek(dayToDelete);
+    final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+
+    final scheduleQuery = await FirebaseFirestore.instance.collection('schedules').where('weekStartDate', isEqualTo: weekStartDate).limit(1).get();
+
+    if (scheduleQuery.docs.isNotEmpty) {
+      final scheduleDocRef = scheduleQuery.docs.first.reference;
+      final scheduleData = await scheduleDocRef.get();
+      final data = scheduleData.data() as Map<String, dynamic>?;
+
+      if (data != null) {
+        final allShifts = (data['shifts'] as List<dynamic>? ?? []).map((s) => Shift.fromMap(s)).toList();
+        final shiftsToKeep = allShifts.where((s) => !_isSameDay(s.startTime, dayToDelete)).map((s) => s.toMap()).toList();
+        await scheduleDocRef.update({'shifts': shiftsToKeep});
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('All shifts for ${DateFormat.yMd().format(dayToDelete)} deleted.'), backgroundColor: Colors.green));
+        _fetchData();
+      }
+    }
+  }
+
+  Future<bool> _showDeleteConfirmationDialog({required BuildContext context, required String title, required String content}) async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    ) ?? false;
+  }
+
   DateTime _getStartOfWeek(DateTime date) {
     final utcDate = DateTime.utc(date.year, date.month, date.day);
     return utcDate.subtract(Duration(days: utcDate.weekday - 1));
@@ -138,7 +192,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
 
     final destStartOfWeek = _getStartOfWeek(_focusedDay);
 
-    if(isSameDay(destStartOfWeek, _copiedWeekStartDate)) {
+    if(isSameDay(destStartOfWeek, _copiedWeekStartDate!)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot paste into the same week.'), backgroundColor: Colors.orange));
       return;
     }
@@ -228,6 +282,8 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
       setState(() {
         _selectedDay = selectedDay;
         _focusedDay = focusedDay;
+        _isSelectionMode = false;
+        _selectedShiftsForCopy.clear();
       });
       _selectedShifts.value = _getShiftsForDay(selectedDay);
     }
@@ -242,6 +298,21 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     return AppBar(
       title: const Text('Manage Team Schedule'),
       actions: [
+        if (_selectedShifts.value.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_outlined),
+            onPressed: () async {
+              final confirmed = await _showDeleteConfirmationDialog(
+                context: context,
+                title: 'Delete All Shifts?',
+                content: 'Are you sure you want to delete all ${_selectedShifts.value.length} shifts for ${DateFormat.yMd().format(_selectedDay!)}?',
+              );
+              if (confirmed) {
+                _deleteDayShifts(_selectedDay!);
+              }
+            },
+            tooltip: 'Delete all shifts for selected day',
+          ),
         if (_copiedShifts.isNotEmpty)
           IconButton(
             icon: const Icon(Icons.paste),
@@ -326,11 +397,10 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
                     final siteColor = _siteColors[shift.siteId] ?? Colors.grey;
                     final isSelected = _selectedShiftsForCopy.contains(shift);
 
-                    // --- NEW: Check if the shift is in the past ---
                     final bool isPastShift = shift.startTime.isBefore(DateTime.now());
 
                     return Opacity(
-                      opacity: isPastShift ? 0.6 : 1.0, // Fade out past shifts
+                      opacity: isPastShift ? 0.6 : 1.0,
                       child: Card(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         child: ListTile(
@@ -342,7 +412,21 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
                           title: Text(employeeName, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text('$siteName\n${DateFormat('h:mm a').format(shift.startTime)} - ${DateFormat('h:mm a').format(shift.endTime)}'),
                           isThreeLine: true,
-                          // Disable interactions for past shifts
+                          trailing: isPastShift || _isSelectionMode
+                              ? null
+                              : IconButton(
+                            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                            onPressed: () async {
+                              final confirmed = await _showDeleteConfirmationDialog(
+                                context: context,
+                                title: 'Delete Shift?',
+                                content: 'Are you sure you want to delete this shift for $employeeName?',
+                              );
+                              if (confirmed) {
+                                _deleteSingleShift(shift);
+                              }
+                            },
+                          ),
                           onLongPress: isPastShift || _isSelectionMode ? null : () => _startSelectionMode(shift),
                           onTap: isPastShift ? null : () {
                             if (_isSelectionMode) {

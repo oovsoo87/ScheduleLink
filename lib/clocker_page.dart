@@ -87,7 +87,6 @@ class _ClockerPageState extends State<ClockerPage> {
     _clockInRulesFuture = _fetchClockInRules();
   }
 
-  // --- UPDATED: This function now includes the final "shift is over" check ---
   Future<ClockInRulesResult> _fetchClockInRules() async {
     if (_currentUser == null) return ClockInRulesResult(canClockIn: false, reason: 'Not logged in.');
 
@@ -113,17 +112,13 @@ class _ClockerPageState extends State<ClockerPage> {
       return ClockInRulesResult(canClockIn: false, reason: 'You are not scheduled to work today.');
     }
 
-    // --- NEW: Check if all scheduled shifts for today are already over ---
     final bool allShiftsAreOver = todayShifts.every((shift) => shift.endTime.isBefore(now));
     if (allShiftsAreOver) {
       return ClockInRulesResult(canClockIn: false, reason: 'Your shift for today is over.');
     }
-    // --- END NEW ---
 
-    // If we reach here, the user is scheduled today, so they are allowed to clock in.
     return ClockInRulesResult(canClockIn: true);
   }
-  // --- END UPDATE ---
 
   Future<void> _updateLocationForEntry(String entryId, String locationField) async {
     Map<String, dynamic>? locationData;
@@ -137,10 +132,12 @@ class _ClockerPageState extends State<ClockerPage> {
       }
       Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
       List<Placemark> placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
-      String address = "No address found";
+      String address = "Address not available";
       if (placemarks.isNotEmpty) {
         final pm = placemarks.first;
-        address = "${pm.street}, ${pm.locality}, ${pm.postalCode}, ${pm.country}";
+        final addressParts = [pm.street, pm.locality, pm.postalCode, pm.country];
+        address = addressParts.where((part) => part != null && part.isNotEmpty).join(', ');
+        if(address.isEmpty) address = "Address details not available.";
       }
       locationData = {
         'coordinates': GeoPoint(position.latitude, position.longitude),
@@ -150,7 +147,8 @@ class _ClockerPageState extends State<ClockerPage> {
         locationField: locationData,
       });
     } catch (e) {
-      print("Background location update failed: $e");
+      print('GEOLOCATION ERROR: ${e.toString()}');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Could not save location: ${e.toString()}")));
     }
   }
 
@@ -162,15 +160,12 @@ class _ClockerPageState extends State<ClockerPage> {
       builder: (context) {
         return AlertDialog(
           title: const Text('Select Work Site'),
-          content: Form(
-            key: formKey,
-            child: DropdownButtonFormField<Site>(
-              value: selectedSite,
-              items: sites.map((site) => DropdownMenuItem<Site>(value: site, child: Text(site.siteName))).toList(),
-              onChanged: (value) => selectedSite = value,
-              validator: (value) => value == null ? 'Please select a site' : null,
-            ),
-          ),
+          content: Form(key: formKey, child: DropdownButtonFormField<Site>(
+            value: selectedSite,
+            items: sites.map((site) => DropdownMenuItem<Site>(value: site, child: Text(site.siteName))).toList(),
+            onChanged: (value) => selectedSite = value,
+            validator: (value) => value == null ? 'Please select a site' : null,
+          )),
           actions: [
             TextButton(onPressed: () => Navigator.of(context).pop(null), child: const Text('Cancel')),
             ElevatedButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.of(context).pop(selectedSite); }, child: const Text('Confirm')),
@@ -180,28 +175,46 @@ class _ClockerPageState extends State<ClockerPage> {
     );
   }
 
+  // --- THIS FUNCTION IS COMPLETELY REBUILT FOR THE NEW LOGIC ---
   Future<void> _clockIn() async {
     if (_currentUser == null) return;
     try {
-      final userDoc = await _firestore.collection('users').doc(_currentUser!.uid).get();
-      if (!userDoc.exists) { throw Exception("User profile not found."); }
-      final userProfile = UserProfile.fromFirestore(userDoc);
-      final siteIds = userProfile.assignedSiteIds;
-      if (siteIds.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You are not assigned to any sites. Cannot clock in.'), backgroundColor: Colors.red));
-        return;
+      // 1. Get today's shifts for the user
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
+      final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+      final scheduleQuery = await _firestore.collection('schedules').where('weekStartDate', isEqualTo: weekStartDate).limit(1).get();
+
+      if (scheduleQuery.docs.isEmpty) return; // Should be caught by rules, but as a safeguard.
+
+      final data = scheduleQuery.docs.first.data() as Map<String, dynamic>;
+      final allShiftsInWeek = (data['shifts'] as List<dynamic>? ?? []).map((s) => Shift.fromMap(s)).toList();
+      final todayShifts = allShiftsInWeek.where((s) => s.userId == _currentUser!.uid && _isSameDay(s.startTime, now)).toList();
+
+      // 2. Determine the unique sites for today's shifts
+      final uniqueSiteIds = todayShifts.map((s) => s.siteId).toSet().toList();
+
+      String? selectedSiteId;
+
+      if (uniqueSiteIds.length == 1) {
+        // 3a. If only one site, auto-select it
+        selectedSiteId = uniqueSiteIds.first;
+      } else if (uniqueSiteIds.length > 1) {
+        // 3b. If multiple sites, show a filtered selection dialog
+        final sitesSnapshot = await _firestore.collection('sites').where(FieldPath.documentId, whereIn: uniqueSiteIds).get();
+        final scheduledSites = sitesSnapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
+        final Site? selectedSite = await _showSiteSelectionDialog(scheduledSites);
+        if (selectedSite != null) {
+          selectedSiteId = selectedSite.id;
+        }
       }
-      final sitesSnapshot = await _firestore.collection('sites').where(FieldPath.documentId, whereIn: siteIds).get();
-      final assignedSites = sitesSnapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
-      if (assignedSites.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Assigned site data could not be found. Cannot clock in.'), backgroundColor: Colors.red));
-        return;
-      }
-      final Site? selectedSite = await _showSiteSelectionDialog(assignedSites);
-      if (selectedSite != null) {
+
+      // 4. Proceed with clock-in if a site was selected (either automatically or by user)
+      if (selectedSiteId != null) {
         final newEntry = await _firestore.collection('timeEntries').add({
           'userId': _currentUser!.uid,
-          'siteId': selectedSite.id,
+          'siteId': selectedSiteId,
           'clockInTime': Timestamp.now(),
           'clockOutTime': null,
           'status': 'clocked-in',
@@ -209,6 +222,8 @@ class _ClockerPageState extends State<ClockerPage> {
         });
         _updateLocationForEntry(newEntry.id, 'clockInLocation');
       }
+      // If user cancels dialog, selectedSiteId will be null and nothing happens.
+
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Clock-in failed: $e"), backgroundColor: Colors.red));
     }
@@ -231,19 +246,13 @@ class _ClockerPageState extends State<ClockerPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Clocker'),
-      ),
+      appBar: AppBar(title: const Text('Clocker')),
       body: StreamBuilder<QuerySnapshot>(
         stream: _firestore.collection('timeEntries').where('userId', isEqualTo: _currentUser!.uid).where('status', isEqualTo: 'clocked-in').limit(1).snapshots(),
         builder: (context, streamSnapshot) {
           if (streamSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (streamSnapshot.hasError) {
-            return Center(child: Text("Error: ${streamSnapshot.error}"));
-          }
-
           final bool isClockedIn = streamSnapshot.hasData && streamSnapshot.data!.docs.isNotEmpty;
           final String? entryId = isClockedIn ? streamSnapshot.data!.docs.first.id : null;
 
@@ -253,7 +262,6 @@ class _ClockerPageState extends State<ClockerPage> {
               if (futureSnapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-
               final clockInRules = futureSnapshot.data ?? ClockInRulesResult(canClockIn: false, reason: 'Error loading schedule.');
               final bool canClockIn = clockInRules.canClockIn;
 
@@ -266,33 +274,19 @@ class _ClockerPageState extends State<ClockerPage> {
                       const Spacer(),
                       const LiveClockWidget(),
                       const SizedBox(height: 48),
-                      Text(
-                        isClockedIn ? 'You are CLOCKED IN' : 'You are CLOCKED OUT',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
+                      Text(isClockedIn ? 'You are CLOCKED IN' : 'You are CLOCKED OUT', style: Theme.of(context).textTheme.headlineSmall),
                       const SizedBox(height: 40),
                       SizedBox(
-                        width: double.infinity,
-                        height: 60,
+                        width: double.infinity, height: 60,
                         child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isClockedIn ? Colors.red : (canClockIn ? Colors.green : Colors.grey),
-                            foregroundColor: Colors.white,
-                          ),
+                          style: ElevatedButton.styleFrom(backgroundColor: isClockedIn ? Colors.red : (canClockIn ? Colors.green : Colors.grey), foregroundColor: Colors.white),
                           onPressed: isClockedIn ? () => _clockOut(entryId!) : (canClockIn ? _clockIn : null),
-                          child: Text(
-                            isClockedIn ? 'Clock Out' : 'Clock In',
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
-                          ),
+                          child: Text(isClockedIn ? 'Clock Out' : 'Clock In', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white)),
                         ),
                       ),
                       if (!isClockedIn && !canClockIn) ...[
                         const SizedBox(height: 16),
-                        Text(
-                          clockInRules.reason,
-                          style: TextStyle(color: Colors.grey.shade600),
-                          textAlign: TextAlign.center,
-                        )
+                        Text(clockInRules.reason, style: TextStyle(color: Colors.grey.shade600), textAlign: TextAlign.center)
                       ],
                       const Spacer(flex: 2),
                     ],

@@ -2,15 +2,14 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/services.dart'; // <-- NEW
-import 'package:provider/provider.dart'; // <-- NEW
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'auth_gate.dart';
 import 'firebase_options.dart';
-import 'services/theme_provider.dart'; // <-- NEW (We will create this file next)
+import 'services/theme_provider.dart'; // <-- Corrected import path
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // NEW: Lock orientation to portrait
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
@@ -19,7 +18,6 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // NEW: Wrap the app in our ThemeProvider
   runApp(
     ChangeNotifierProvider(
       create: (context) => ThemeProvider(),
@@ -33,7 +31,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // NEW: The app now consumes the theme from the provider
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp(
@@ -42,6 +39,7 @@ class MyApp extends StatelessWidget {
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.themeMode,
       home: const AuthGate(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
