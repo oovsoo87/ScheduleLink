@@ -5,7 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'services/theme_provider.dart';
 import 'my_account_page.dart';
-import 'about_page.dart'; // <-- NEW
+import 'about_page.dart';
+import 'change_password_page.dart'; // <-- NEW IMPORT
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -36,6 +37,18 @@ class SettingsPage extends StatelessWidget {
             },
           ),
           const Divider(),
+          // --- NEW: Change Password ListTile ---
+          ListTile(
+            leading: const Icon(Icons.lock_outline),
+            title: const Text('Change Password'),
+            subtitle: const Text('Update your login password'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const ChangePasswordPage()));
+            },
+          ),
+          // --- END NEW ---
+          const Divider(),
           SwitchListTile(
             title: const Text('Dark Mode'),
             value: themeProvider.themeMode == ThemeMode.dark,
@@ -46,10 +59,10 @@ class SettingsPage extends StatelessWidget {
           ),
           const Divider(),
           ListTile(
-            leading: const Icon(Icons.info_outline), // <-- NEW
-            title: const Text('About'), // <-- NEW
-            trailing: const Icon(Icons.chevron_right), // <-- NEW
-            onTap: () { // <-- NEW
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
               Navigator.push(context, MaterialPageRoute(builder: (context) => const AboutPage()));
             },
           ),

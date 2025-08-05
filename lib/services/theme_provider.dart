@@ -38,7 +38,16 @@ class ThemeProvider with ChangeNotifier {
         foregroundColor: Colors.white,
       ),
     ),
+    // --- UPDATED THEME ---
     iconTheme: const IconThemeData(color: _primaryColor),
+    listTileTheme: const ListTileThemeData(
+      iconColor: _primaryColor, // Sets icon color for ListTiles
+    ),
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      selectedItemColor: _primaryColor, // Sets color for selected nav bar item
+      unselectedItemColor: Colors.grey, // Sets color for unselected nav bar items
+    ),
+    // --- END UPDATE ---
   );
 
   // Define the dark theme
@@ -66,7 +75,16 @@ class ThemeProvider with ChangeNotifier {
         foregroundColor: Colors.black,
       ),
     ),
+    // --- UPDATED THEME ---
     iconTheme: const IconThemeData(color: _primaryColor),
+    listTileTheme: const ListTileThemeData(
+      iconColor: _primaryColor, // Sets icon color for ListTiles
+    ),
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      selectedItemColor: _primaryColor, // Sets color for selected nav bar item
+      unselectedItemColor: Colors.grey, // Sets color for unselected nav bar items
+    ),
+    // --- END UPDATE ---
   );
 
   void toggleTheme(bool isDark) async {
