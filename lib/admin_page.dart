@@ -5,6 +5,7 @@ import 'manage_sites_page.dart';
 import 'manage_staff_page.dart';
 import 'reports_page.dart';
 import 'approve_time_off_page.dart';
+import 'send_notification_page.dart'; // <-- NEW IMPORT
 
 class AdminPage extends StatelessWidget {
   const AdminPage({super.key});
@@ -18,6 +19,18 @@ class AdminPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          // --- NEW: Send Notifications ListTile ---
+          ListTile(
+            title: const Text('Notification Centre'),
+            subtitle: const Text('Send messages to your staff'),
+            leading: const Icon(Icons.send_outlined),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const SendNotificationPage()));
+            },
+          ),
+          const Divider(),
+          // --- END NEW ---
           ListTile(
             title: const Text('Manage Sites'),
             subtitle: const Text('Add, edit, or remove work sites'),

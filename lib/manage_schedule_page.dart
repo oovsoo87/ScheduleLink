@@ -357,6 +357,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+            startingDayOfWeek: StartingDayOfWeek.monday, // <-- THIS LINE IS ADDED
             onDaySelected: _onDaySelected,
             eventLoader: _getShiftsForDay,
             calendarFormat: _calendarFormat,

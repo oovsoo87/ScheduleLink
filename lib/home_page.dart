@@ -11,6 +11,7 @@ import 'models/site_model.dart';
 import 'manage_schedule_page.dart';
 import 'models/shift_model.dart';
 import 'settings_page.dart';
+import 'notifications_page.dart';
 
 class HomePage extends StatefulWidget {
   final UserProfile userProfile;
@@ -115,7 +116,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // --- NEW: Dialog to show shift details and notes ---
   void _showShiftDetailsDialog(Shift shift) {
     final siteName = _siteNames[shift.siteId] ?? 'Unknown Site';
     final siteColor = _siteColors[shift.siteId] ?? Colors.grey;
@@ -156,16 +156,37 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-  // --- END NEW ---
 
   @override
   Widget build(BuildContext context) {
     final bool canManage = widget.userProfile.role == 'supervisor' || widget.userProfile.role == 'admin';
+    final currentUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('My Schedule'),
         actions: [
+          if (currentUser != null)
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('userId', isEqualTo: currentUser.uid)
+                  .where('isRead', isEqualTo: false)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                final unreadCount = snapshot.data?.docs.length ?? 0;
+                return IconButton(
+                  icon: Badge(
+                    label: Text('$unreadCount'),
+                    isLabelVisible: unreadCount > 0,
+                    child: const Icon(Icons.notifications_outlined),
+                  ),
+                  onPressed: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationsPage()));
+                  },
+                );
+              },
+            ),
           if (canManage)
             IconButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ManageSchedulePage())),
@@ -189,6 +210,7 @@ class _HomePageState extends State<HomePage> {
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+            startingDayOfWeek: StartingDayOfWeek.monday, // <-- THIS LINE IS ADDED
             onDaySelected: _onDaySelected,
             eventLoader: _getShiftsForDay,
             calendarFormat: _calendarFormat,
@@ -238,7 +260,6 @@ class _HomePageState extends State<HomePage> {
                         leading: CircleAvatar(backgroundColor: siteColor, radius: 10),
                         title: Text(siteName, style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text('$startTime - $endTime'),
-                        // NEW: Add onTap to show the details dialog
                         onTap: () => _showShiftDetailsDialog(shift),
                       ),
                     );
