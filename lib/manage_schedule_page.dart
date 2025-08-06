@@ -11,7 +11,9 @@ import 'models/site_model.dart';
 import 'add_shift_page.dart';
 
 class ManageSchedulePage extends StatefulWidget {
-  const ManageSchedulePage({super.key});
+  // This line is added to accept the user's profile
+  final UserProfile userProfile;
+  const ManageSchedulePage({super.key, required this.userProfile});
 
   @override
   State<ManageSchedulePage> createState() => _ManageSchedulePageState();
@@ -24,7 +26,13 @@ bool _isSameDay(DateTime a, DateTime b) {
 
 class _ManageSchedulePageState extends State<ManageSchedulePage> {
   late final ValueNotifier<List<Shift>> _selectedShifts;
+
   Map<DateTime, List<Shift>> _allShiftsByDay = {};
+  List<UserProfile> _allStaff = [];
+  List<UserProfile> _allManagers = [];
+
+  Map<DateTime, List<Shift>> _filteredShiftsByDay = {};
+
   Map<String, String> _userNames = {};
   Map<String, String> _siteNames = {};
   Map<String, Color> _siteColors = {};
@@ -39,11 +47,13 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
   CalendarFormat _calendarFormat = CalendarFormat.week;
   bool _isLoading = true;
 
+  dynamic _selectedFilter;
+
   @override
   void initState() {
     super.initState();
     _selectedDay = _focusedDay;
-    _selectedShifts = ValueNotifier(_getShiftsForDay(_selectedDay!));
+    _selectedShifts = ValueNotifier([]);
     _fetchData();
   }
 
@@ -74,14 +84,14 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
       final sitesSnapshot = results[1] as QuerySnapshot;
       final scheduleSnapshot = results[2] as QuerySnapshot;
 
-      final userMap = {for (var doc in usersSnapshot.docs) doc.id: '${doc['firstName']} ${doc['lastName']}'.trim()};
+      final userProfiles = usersSnapshot.docs.map((doc) => UserProfile.fromFirestore(doc)).toList();
+      _userNames = {for (var user in userProfiles) user.uid: '${user.firstName} ${user.lastName}'.trim()};
 
       final sites = sitesSnapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
-      final siteNameMap = {for (var site in sites) site.id: site.siteName};
-      final siteColorMap = {for (var site in sites) site.id: _colorFromHex(site.siteColor)};
+      _siteNames = {for (var site in sites) site.id: site.siteName};
+      _siteColors = {for (var site in sites) site.id: _colorFromHex(site.siteColor)};
 
       Map<DateTime, List<Shift>> shiftsMap = {};
-
       for (var scheduleDoc in scheduleSnapshot.docs) {
         final data = scheduleDoc.data() as Map<String, dynamic>;
         final shiftsData = data['shifts'] as List<dynamic>? ?? [];
@@ -89,20 +99,16 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
         for (var shiftData in shiftsData) {
           final shift = Shift.fromMap(shiftData);
           final day = DateTime.utc(shift.startTime.year, shift.startTime.month, shift.startTime.day);
-          if (shiftsMap[day] == null) {
-            shiftsMap[day] = [];
-          }
-          shiftsMap[day]!.add(shift);
+          shiftsMap.putIfAbsent(day, () => []).add(shift);
         }
       }
 
       if (mounted) {
         setState(() {
-          _userNames = userMap;
-          _siteNames = siteNameMap;
-          _siteColors = siteColorMap;
+          _allStaff = userProfiles;
+          _allManagers = userProfiles.where((u) => u.role == 'supervisor' || u.role == 'admin').toList();
           _allShiftsByDay = shiftsMap;
-          _selectedShifts.value = _getShiftsForDay(_selectedDay!);
+          _initializeFilter(); // Auto-filter based on role
           _isLoading = false;
         });
       }
@@ -114,6 +120,59 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     }
   }
 
+  void _initializeFilter() {
+    if (widget.userProfile.role == 'supervisor') {
+      _selectedFilter = _allManagers.firstWhere((m) => m.uid == widget.userProfile.uid, orElse: () => widget.userProfile);
+    }
+    _applyFilter();
+  }
+
+  void _applyFilter() {
+    Map<DateTime, List<Shift>> newFilteredMap = {};
+
+    if (_selectedFilter == null) { // "All Staff"
+      newFilteredMap = Map.from(_allShiftsByDay);
+    } else if (_selectedFilter is UserProfile) { // A specific manager's team
+      final manager = _selectedFilter as UserProfile;
+      final staffIdsToShow = _allStaff
+          .where((user) => user.directSupervisorId == manager.uid || user.uid == manager.uid)
+          .map((user) => user.uid)
+          .toSet();
+
+      _allShiftsByDay.forEach((day, shifts) {
+        final filteredShifts = shifts.where((shift) => staffIdsToShow.contains(shift.userId)).toList();
+        if(filteredShifts.isNotEmpty) {
+          newFilteredMap[day] = filteredShifts;
+        }
+      });
+    }
+
+    setState(() {
+      _filteredShiftsByDay = newFilteredMap;
+      if(_selectedDay != null) {
+        _selectedShifts.value = _getShiftsForDay(_selectedDay!);
+      }
+    });
+  }
+
+  List<Shift> _getShiftsForDay(DateTime day) {
+    final utcDay = DateTime.utc(day.year, day.month, day.day);
+    return _filteredShiftsByDay[utcDay] ?? [];
+  }
+
+  void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
+    if (!isSameDay(_selectedDay, selectedDay)) {
+      setState(() {
+        _selectedDay = selectedDay;
+        _focusedDay = focusedDay;
+        _isSelectionMode = false;
+        _selectedShiftsForCopy.clear();
+      });
+    }
+    _selectedShifts.value = _getShiftsForDay(selectedDay);
+  }
+
+  // (Omitted for brevity - all other functions from _deleteSingleShift to _buildSelectionAppBar are unchanged)
   Future<void> _deleteSingleShift(Shift shiftToDelete) async {
     final startOfWeek = _getStartOfWeek(shiftToDelete.startTime);
     final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
@@ -123,7 +182,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     if (scheduleQuery.docs.isNotEmpty) {
       final scheduleDocRef = scheduleQuery.docs.first.reference;
       await scheduleDocRef.update({'shifts': FieldValue.arrayRemove([shiftToDelete.toMap()])});
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Shift deleted.'), backgroundColor: Colors.green));
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Shift deleted.'), backgroundColor: Colors.green));
       _fetchData();
     }
   }
@@ -143,7 +202,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
         final allShifts = (data['shifts'] as List<dynamic>? ?? []).map((s) => Shift.fromMap(s)).toList();
         final shiftsToKeep = allShifts.where((s) => !_isSameDay(s.startTime, dayToDelete)).map((s) => s.toMap()).toList();
         await scheduleDocRef.update({'shifts': shiftsToKeep});
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('All shifts for ${DateFormat.yMd().format(dayToDelete)} deleted.'), backgroundColor: Colors.green));
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('All shifts for ${DateFormat.yMd().format(dayToDelete)} deleted.'), backgroundColor: Colors.green));
         _fetchData();
       }
     }
@@ -192,7 +251,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
 
     final destStartOfWeek = _getStartOfWeek(_focusedDay);
 
-    if(isSameDay(destStartOfWeek, _copiedWeekStartDate!)) {
+    if(_isSameDay(destStartOfWeek, _copiedWeekStartDate!)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot paste into the same week.'), backgroundColor: Colors.orange));
       return;
     }
@@ -234,7 +293,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
       });
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    if(mounted) ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Pasted ${newShiftsToSave.length} shifts to week of ${DateFormat.yMd().format(destStartOfWeek)}.'), backgroundColor: Colors.green)
     );
 
@@ -270,23 +329,6 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
       _isSelectionMode = false;
       _selectedShiftsForCopy.clear();
     });
-  }
-
-  List<Shift> _getShiftsForDay(DateTime day) {
-    final utcDay = DateTime.utc(day.year, day.month, day.day);
-    return _allShiftsByDay[utcDay] ?? [];
-  }
-
-  void _onDaySelected(DateTime selectedDay, DateTime focusedDay) {
-    if (!isSameDay(_selectedDay, selectedDay)) {
-      setState(() {
-        _selectedDay = selectedDay;
-        _focusedDay = focusedDay;
-        _isSelectionMode = false;
-        _selectedShiftsForCopy.clear();
-      });
-      _selectedShifts.value = _getShiftsForDay(selectedDay);
-    }
   }
 
   void _navigateAndRefresh(Widget page) {
@@ -344,20 +386,57 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
+    final bool canFilter = widget.userProfile.role == 'admin';
+
     return Scaffold(
       appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildDefaultAppBar(),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
+          if (canFilter)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: DropdownButtonFormField<dynamic>(
+                value: _selectedFilter,
+                isExpanded: true,
+                hint: const Text('Filter by Team...'),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.filter_list),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem<dynamic>(
+                    value: null,
+                    child: Text('All Staff', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  ..._allManagers.map((manager) {
+                    final name = '${manager.firstName} ${manager.lastName}'.trim();
+                    return DropdownMenuItem<dynamic>(
+                      value: manager,
+                      child: Text('Team: ${name.isEmpty ? manager.email : name}'),
+                    );
+                  }),
+                ],
+                onChanged: (newValue) {
+                  setState(() {
+                    _selectedFilter = newValue;
+                  });
+                  _applyFilter();
+                },
+              ),
+            ),
+
           TableCalendar<Shift>(
             firstDay: DateTime.utc(2024, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            startingDayOfWeek: StartingDayOfWeek.monday, // <-- THIS LINE IS ADDED
+            startingDayOfWeek: StartingDayOfWeek.monday,
             onDaySelected: _onDaySelected,
             eventLoader: _getShiftsForDay,
             calendarFormat: _calendarFormat,

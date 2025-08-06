@@ -27,27 +27,27 @@ class ThemeProvider with ChangeNotifier {
       brightness: Brightness.light,
     ),
     textTheme: GoogleFonts.poppinsTextTheme(ThemeData.light().textTheme),
+    // --- THIS IS THE ONLY SECTION THAT HAS CHANGED ---
     appBarTheme: AppBarTheme(
-      backgroundColor: Colors.white,
-      foregroundColor: Colors.black,
+      backgroundColor: _primaryColor, // Changed from white to turquoise
+      foregroundColor: Colors.white,   // Changed from black to white for readability
       elevation: 1,
     ),
+    // --- END CHANGE ---
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: _primaryColor,
         foregroundColor: Colors.white,
       ),
     ),
-    // --- UPDATED THEME ---
     iconTheme: const IconThemeData(color: _primaryColor),
     listTileTheme: const ListTileThemeData(
-      iconColor: _primaryColor, // Sets icon color for ListTiles
+      iconColor: _primaryColor,
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-      selectedItemColor: _primaryColor, // Sets color for selected nav bar item
-      unselectedItemColor: Colors.grey, // Sets color for unselected nav bar items
+      selectedItemColor: _primaryColor,
+      unselectedItemColor: Colors.grey,
     ),
-    // --- END UPDATE ---
   );
 
   // Define the dark theme
@@ -75,16 +75,14 @@ class ThemeProvider with ChangeNotifier {
         foregroundColor: Colors.black,
       ),
     ),
-    // --- UPDATED THEME ---
     iconTheme: const IconThemeData(color: _primaryColor),
     listTileTheme: const ListTileThemeData(
-      iconColor: _primaryColor, // Sets icon color for ListTiles
+      iconColor: _primaryColor,
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-      selectedItemColor: _primaryColor, // Sets color for selected nav bar item
-      unselectedItemColor: Colors.grey, // Sets color for unselected nav bar items
+      selectedItemColor: _primaryColor,
+      unselectedItemColor: Colors.grey,
     ),
-    // --- END UPDATE ---
   );
 
   void toggleTheme(bool isDark) async {

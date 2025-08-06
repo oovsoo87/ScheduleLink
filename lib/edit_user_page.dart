@@ -25,7 +25,7 @@ class _EditUserPageState extends State<EditUserPage> {
   late final TextEditingController _quotaController;
   late final TextEditingController _dailyHoursController;
   late final TextEditingController _payrollIdController;
-  late final TextEditingController _siteClockInNumberController; // <-- NEW
+  late final TextEditingController _siteClockInNumberController;
 
   List<Site> _siteList = [];
   List<UserProfile> _supervisorList = [];
@@ -47,7 +47,7 @@ class _EditUserPageState extends State<EditUserPage> {
     _quotaController = TextEditingController(text: widget.userProfile.timeOffQuota.toString());
     _dailyHoursController = TextEditingController(text: widget.userProfile.defaultDailyHours.toString());
     _payrollIdController = TextEditingController(text: widget.userProfile.payrollId ?? '');
-    _siteClockInNumberController = TextEditingController(text: widget.userProfile.siteClockInNumber ?? ''); // <-- NEW
+    _siteClockInNumberController = TextEditingController(text: widget.userProfile.siteClockInNumber ?? '');
 
     _selectedSiteIds = List<String>.from(widget.userProfile.assignedSiteIds);
     _selectedSupervisorId = widget.userProfile.directSupervisorId;
@@ -59,7 +59,10 @@ class _EditUserPageState extends State<EditUserPage> {
   Future<void> _fetchDropdownData() async {
     try {
       final sitesSnapshot = await FirebaseFirestore.instance.collection('sites').get();
-      final supervisorSnapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'supervisor').get();
+      // --- THIS QUERY IS THE ONLY CHANGE ---
+      // It now fetches users who are EITHER a 'supervisor' OR an 'admin'.
+      final supervisorSnapshot = await FirebaseFirestore.instance.collection('users').where('role', whereIn: ['supervisor', 'admin']).get();
+      // The admin query remains the same, fetching only 'admins'.
       final adminSnapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'admin').get();
 
       if (mounted) {
@@ -86,7 +89,7 @@ class _EditUserPageState extends State<EditUserPage> {
     _quotaController.dispose();
     _dailyHoursController.dispose();
     _payrollIdController.dispose();
-    _siteClockInNumberController.dispose(); // <-- NEW
+    _siteClockInNumberController.dispose();
     super.dispose();
   }
 
@@ -102,7 +105,7 @@ class _EditUserPageState extends State<EditUserPage> {
           'timeOffQuota': double.tryParse(_quotaController.text) ?? 0.0,
           'defaultDailyHours': double.tryParse(_dailyHoursController.text) ?? 8.0,
           'payrollId': _payrollIdController.text.trim(),
-          'siteClockInNumber': _siteClockInNumberController.text.trim(), // <-- NEW
+          'siteClockInNumber': _siteClockInNumberController.text.trim(),
           'assignedSiteIds': _selectedSiteIds,
           'directSupervisorId': _selectedSupervisorId,
           'directAdminId': _selectedAdminId,
@@ -152,7 +155,6 @@ class _EditUserPageState extends State<EditUserPage> {
             ),
             const SizedBox(height: 16),
 
-            // --- NEW: Site Clock-in Number Field ---
             TextFormField(
               controller: _siteClockInNumberController,
               decoration: const InputDecoration(labelText: 'Site Clock-in Number (Optional)'),

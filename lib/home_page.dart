@@ -189,7 +189,10 @@ class _HomePageState extends State<HomePage> {
             ),
           if (canManage)
             IconButton(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ManageSchedulePage())),
+              onPressed: () {
+                // This line passes the userProfile to the next page
+                Navigator.push(context, MaterialPageRoute(builder: (context) => ManageSchedulePage(userProfile: widget.userProfile)));
+              },
               icon: const Icon(Icons.edit_calendar),
             ),
           IconButton(
@@ -210,7 +213,7 @@ class _HomePageState extends State<HomePage> {
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-            startingDayOfWeek: StartingDayOfWeek.monday, // <-- THIS LINE IS ADDED
+            startingDayOfWeek: StartingDayOfWeek.monday,
             onDaySelected: _onDaySelected,
             eventLoader: _getShiftsForDay,
             calendarFormat: _calendarFormat,
