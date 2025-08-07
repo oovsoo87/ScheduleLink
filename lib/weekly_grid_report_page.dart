@@ -1,6 +1,7 @@
 // lib/weekly_grid_report_page.dart
 
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,7 +27,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
   bool _isGenerating = false;
   DateTime _displayDate = DateTime.now();
 
-  // --- NEW: Controller for the custom name field ---
   final _customNameController = TextEditingController();
 
   List<UserProfile> _staffList = [];
@@ -42,7 +42,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
 
   @override
   void dispose() {
-    // --- NEW: Dispose the controller ---
     _customNameController.dispose();
     super.dispose();
   }
@@ -150,18 +149,12 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
     return shiftsData.map((data) => Shift.fromMap(data)).toList();
   }
 
-  PdfColor _getTextColorForBackground(String hexColor) {
-    try {
-      final color = PdfColor.fromHex(hexColor);
-      double luminance = (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue);
-      return luminance > 0.5 ? PdfColors.black : PdfColors.white;
-    } catch (e) {
-      return PdfColors.white;
-    }
-  }
-
   Future<void> _generatePdf(List<Shift> allShifts) async {
     final pdf = pw.Document();
+
+    final font = pw.Font.ttf(await rootBundle.load("assets/fonts/Poppins-Regular.ttf"));
+    final boldFont = pw.Font.ttf(await rootBundle.load("assets/fonts/Poppins-Bold.ttf"));
+    final theme = pw.ThemeData.withFont(base: font, bold: boldFont);
 
     final filteredShifts = allShifts.where((shift) => _selectedStaffIds.contains(shift.userId)).toList();
     final staffInReport = _staffList.where((user) => _selectedStaffIds.contains(user.uid)).toList();
@@ -179,86 +172,112 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
     final headers = ['Staff Member'];
     for (int i=0; i<7; i++) {
       final day = startOfWeek.add(Duration(days: i));
-      headers.add('${DateFormat('E').format(day)}\n${DateFormat('d MMM').format(day)}');
+      headers.add('${DateFormat('E').format(day)}\n${DateFormat('d/MM').format(day)}');
     }
 
     final List<pw.TableRow> tableRows = [];
     tableRows.add(pw.TableRow(
+        decoration: const pw.BoxDecoration(
+          color: PdfColors.grey200,
+          border: pw.Border(bottom: pw.BorderSide(width: 2, color: PdfColors.black)),
+        ),
         children: headers.map((header) => pw.Container(
-          padding: const pw.EdgeInsets.all(4),
+          padding: const pw.EdgeInsets.all(5),
           alignment: pw.Alignment.center,
           child: pw.Text(header, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)),
         )).toList()
     ));
 
-    for (final user in staffInReport) {
+    for (var i = 0; i < staffInReport.length; i++) {
+      final user = staffInReport[i];
       final name = '${user.firstName} ${user.lastName}'.trim();
       final cells = <pw.Widget>[];
+
       cells.add(pw.Container(
-          padding: const pw.EdgeInsets.all(4),
+          padding: const pw.EdgeInsets.all(5),
           alignment: pw.Alignment.centerLeft,
-          child: pw.Text(name.isEmpty ? user.email : name, style: const pw.TextStyle(fontSize: 9))
+          // --- UPDATED: Staff name is now bold ---
+          child: pw.Text(name.isEmpty ? user.email : name, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))
       ));
 
-      for (int i = 0; i < 7; i++) {
-        final dayShifts = userShiftsByDay[user.uid]![i] ?? [];
+      for (int j = 0; j < 7; j++) {
+        final dayShifts = userShiftsByDay[user.uid]![j] ?? [];
         cells.add(
-            pw.Column(
-                children: dayShifts.map((shift) {
-                  final siteColorHex = _siteColorsHex[shift.siteId] ?? '9E9E9E';
-                  final siteColor = PdfColor.fromHex(siteColorHex);
-                  final textColor = _getTextColorForBackground(siteColorHex);
-                  final siteName = _siteNames[shift.siteId] ?? 'N/A';
-                  final shiftText = '${DateFormat('HH:mm').format(shift.startTime)}-${DateFormat('HH:mm').format(shift.endTime)}\n$siteName';
+            pw.Padding(
+              padding: const pw.EdgeInsets.all(5),
+              child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: dayShifts.map((shift) {
+                    final siteColorHex = _siteColorsHex[shift.siteId] ?? '9E9E9E';
+                    final siteColor = PdfColor.fromHex(siteColorHex);
+                    final siteName = _siteNames[shift.siteId] ?? 'N/A';
+                    final shiftText = '${DateFormat('HH:mm').format(shift.startTime)}-${DateFormat('HH:mm').format(shift.endTime)}';
 
-                  return pw.Container(
-                    color: siteColor,
-                    width: double.infinity,
-                    padding: const pw.EdgeInsets.all(3),
-                    margin: const pw.EdgeInsets.only(bottom: 2),
-                    child: pw.Text(
-                        shiftText,
-                        style: pw.TextStyle(fontSize: 8, color: textColor),
-                        textAlign: pw.TextAlign.center
-                    ),
-                  );
-                }).toList()
+                    return pw.Padding(
+                      padding: const pw.EdgeInsets.only(bottom: 4),
+                      child: pw.Row(
+                        children: [
+                          pw.Container(
+                            width: 6, height: 6,
+                            margin: const pw.EdgeInsets.only(right: 4, top: 2),
+                            decoration: pw.BoxDecoration(color: siteColor, shape: pw.BoxShape.circle),
+                          ),
+                          pw.Expanded(
+                            child: pw.Text(
+                              // --- UPDATED: Site name is now on a new line ---
+                              '$shiftText\n$siteName',
+                              style: const pw.TextStyle(fontSize: 8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList()
+              ),
             )
         );
       }
-      tableRows.add(pw.TableRow(children: cells));
+
+      tableRows.add(pw.TableRow(
+        children: cells,
+        decoration: i.isEven ? const pw.BoxDecoration(color: PdfColors.grey100) : null,
+        verticalAlignment: pw.TableCellVerticalAlignment.top,
+      ));
     }
 
-    // --- NEW: Header logic ---
     final DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-    final String formattedSundayDate = DateFormat('d MMMM yyyy').format(endOfWeek);
+    final String formattedSundayDate = DateFormat('dd/MM/yy').format(endOfWeek);
     final String mainHeader = 'Team Weekly Schedule for Week Ending $formattedSundayDate';
     final String customName = _customNameController.text.trim();
-    // --- END NEW ---
 
     pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4.landscape,
+          theme: theme,
           build: (context) {
             return pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Header(level: 0, text: mainHeader),
-                  // --- NEW: Add custom name if provided ---
+                  pw.Text(mainHeader, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
                   if (customName.isNotEmpty)
                     pw.Padding(
-                      padding: const pw.EdgeInsets.only(top: 4, bottom: 20),
-                      child: pw.Text(
-                        customName,
-                        style: pw.TextStyle(fontSize: 18, fontStyle: pw.FontStyle.italic),
-                      ),
+                      padding: const pw.EdgeInsets.only(top: 4, bottom: 15),
+                      child: pw.Text(customName, style: pw.TextStyle(fontSize: 18, fontStyle: pw.FontStyle.italic)),
                     )
                   else
                     pw.SizedBox(height: 20),
-                  // --- END NEW ---
                   pw.Table(
-                    border: pw.TableBorder.all(),
-                    columnWidths: { 0: const pw.FlexColumnWidth(2.5) },
+                    border: pw.TableBorder.all(color: PdfColors.grey400),
+                    columnWidths: {
+                      0: const pw.FlexColumnWidth(2.0),
+                      1: const pw.FlexColumnWidth(1.5),
+                      2: const pw.FlexColumnWidth(1.5),
+                      3: const pw.FlexColumnWidth(1.5),
+                      4: const pw.FlexColumnWidth(1.5),
+                      5: const pw.FlexColumnWidth(1.5),
+                      6: const pw.FlexColumnWidth(1.5),
+                      7: const pw.FlexColumnWidth(1.5),
+                    },
                     children: tableRows,
                   )
                 ]
@@ -294,7 +313,8 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
   String _formatWeekRange(DateTime date) {
     DateTime startOfWeek = date.subtract(Duration(days: date.weekday - 1));
     DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
-    return '${DateFormat.yMd().format(startOfWeek)} - ${DateFormat.yMd().format(endOfWeek)}';
+    final DateFormat formatter = DateFormat('dd/MM/yyyy');
+    return '${formatter.format(startOfWeek)} - ${formatter.format(endOfWeek)}';
   }
 
   @override
@@ -324,7 +344,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                 onPressed: _showStaffFilterDialog,
               ),
             ),
-            // --- NEW: Text field for custom name ---
             const SizedBox(height: 16),
             TextFormField(
               controller: _customNameController,
@@ -333,7 +352,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                 border: OutlineInputBorder(),
               ),
             ),
-            // --- END NEW ---
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,

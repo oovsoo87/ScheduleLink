@@ -2,14 +2,44 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'models/user_profile.dart';
 import 'services/theme_provider.dart';
 import 'my_account_page.dart';
 import 'about_page.dart';
-import 'change_password_page.dart'; // <-- NEW IMPORT
+import 'change_password_page.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  UserProfile? _userProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserProfile();
+  }
+
+  Future<void> _fetchUserProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _userProfile = UserProfile.fromFirestore(doc);
+        });
+      }
+    } catch (e) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Could not load user profile: $e")));
+    }
+  }
 
   Future<void> _signOut(BuildContext context) async {
     Navigator.of(context).popUntil((route) => route.isFirst);
@@ -37,7 +67,6 @@ class SettingsPage extends StatelessWidget {
             },
           ),
           const Divider(),
-          // --- NEW: Change Password ListTile ---
           ListTile(
             leading: const Icon(Icons.lock_outline),
             title: const Text('Change Password'),
@@ -47,7 +76,6 @@ class SettingsPage extends StatelessWidget {
               Navigator.push(context, MaterialPageRoute(builder: (context) => const ChangePasswordPage()));
             },
           ),
-          // --- END NEW ---
           const Divider(),
           SwitchListTile(
             title: const Text('Dark Mode'),
@@ -63,7 +91,12 @@ class SettingsPage extends StatelessWidget {
             title: const Text('About'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.push(context, MaterialPageRoute(builder: (context) => const AboutPage()));
+              // Navigate to AboutPage, passing the user's profile
+              if (_userProfile != null) {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => AboutPage(userProfile: _userProfile!)));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Loading user data...")));
+              }
             },
           ),
           const Divider(),

@@ -39,31 +39,26 @@ class _PayrollPageState extends State<PayrollPage> {
   }
 
   Future<List<PayrollData>> _fetchPayrollData(DateTimeRange range) async {
-    // 1. Fetch all active users
     final usersSnapshot = await FirebaseFirestore.instance.collection('users').where('isActive', isEqualTo: true).get();
     final users = usersSnapshot.docs.map((doc) => UserProfile.fromFirestore(doc)).toList();
     final userMap = {for (var user in users) user.uid: user};
 
-    // 2. Fetch all relevant time entries in the date range
     final timeEntriesSnapshot = await FirebaseFirestore.instance.collection('timeEntries')
         .where('status', isEqualTo: 'clocked-out')
         .where('clockInTime', isGreaterThanOrEqualTo: range.start)
         .where('clockInTime', isLessThanOrEqualTo: range.end.add(const Duration(days: 1)))
         .get();
 
-    // 3. Calculate total hours for each user
     Map<String, double> userHours = {};
     for (var entryDoc in timeEntriesSnapshot.docs) {
       final data = entryDoc.data() as Map<String, dynamic>;
       final userId = data['userId'];
       final clockIn = (data['clockInTime'] as Timestamp).toDate();
       final clockOut = (data['clockOutTime'] as Timestamp).toDate();
-      final hoursWorked = clockOut.difference(clockIn).inMinutes / 60.0;
-
+      final hoursWorked = clockOut.difference(clockIn).inSeconds / 3600.0;
       userHours.update(userId, (value) => value + hoursWorked, ifAbsent: () => hoursWorked);
     }
 
-    // 4. Combine data into a final list
     List<PayrollData> payrollList = [];
     userHours.forEach((userId, totalHours) {
       if (userMap.containsKey(userId)) {
@@ -84,14 +79,13 @@ class _PayrollPageState extends State<PayrollPage> {
     try {
       final payrollData = await _fetchPayrollData(_selectedDateRange!);
       if (payrollData.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No clocked-in data found for this period.')));
+        if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No clocked-in data found for this period.')));
         return;
       }
 
       List<List<dynamic>> csvData;
       if (format == 'xero') {
-        // Xero Format: Employee, StartDate, EndDate, Timesheet Title, Total Units
-        csvData = [ ['*Employee', '*StartDate', '*EndDate', 'Timesheet Title', '*Total Units'] ];
+        csvData = [ ['*Employee', '*StartDate', '*EndDate', 'Timesheet Title', '*Total Units', 'Hourly Rate', 'Deduction', 'Loan Repayment', 'Pension %', 'NI Number', 'NI Category', 'Tax Code', 'Payment Period'] ];
         final title = 'Hours for ${DateFormat.yMd().format(_selectedDateRange!.start)} - ${DateFormat.yMd().format(_selectedDateRange!.end)}';
         for (var data in payrollData) {
           csvData.add([
@@ -99,17 +93,32 @@ class _PayrollPageState extends State<PayrollPage> {
             DateFormat('yyyy-MM-dd').format(_selectedDateRange!.start),
             DateFormat('yyyy-MM-dd').format(_selectedDateRange!.end),
             title,
-            data.totalHours.toStringAsFixed(2),
+            data.totalHours.toString(),
+            data.user.hourlyRate.toString(),
+            data.user.standardDeduction.toString(),
+            data.user.loanRepayment.toString(),
+            data.user.pensionPercentage.toString(),
+            data.user.niNumber ?? '',
+            data.user.niCategory ?? '',
+            data.user.taxCode ?? '',
+            data.user.paymentPeriod ?? '',
           ]);
         }
       } else { // Sage Format
-        // Sage Format: Employee Reference, Pay Element Name, Hours
-        csvData = [ ['Employee Reference', 'Pay Element Name', 'Hours'] ];
+        csvData = [ ['Employee Reference', 'Pay Element Name', 'Hours', 'Rate', 'Deduction', 'Loan Repayment', 'Pension %', 'NI Number', 'NI Category', 'Tax Code', 'Payment Period'] ];
         for (var data in payrollData) {
           csvData.add([
             data.user.payrollId ?? data.user.email,
-            'Standard Hours', // A common pay element name
-            data.totalHours.toStringAsFixed(2),
+            'Standard Hours',
+            data.totalHours.toString(),
+            data.user.hourlyRate.toString(),
+            data.user.standardDeduction.toString(),
+            data.user.loanRepayment.toString(),
+            data.user.pensionPercentage.toString(),
+            data.user.niNumber ?? '',
+            data.user.niCategory ?? '',
+            data.user.taxCode ?? '',
+            data.user.paymentPeriod ?? '',
           ]);
         }
       }

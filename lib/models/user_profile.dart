@@ -16,7 +16,18 @@ class UserProfile {
   final double timeOffQuota;
   final double defaultDailyHours;
   final String? payrollId;
-  final String? siteClockInNumber; // <-- NEW
+  final String? siteClockInNumber;
+
+  final double hourlyRate;
+  final double standardDeduction;
+  final double loanRepayment;
+  final double pensionPercentage;
+
+  // --- NEW PAYROLL FIELDS ---
+  final String? niNumber;
+  final String? niCategory;
+  final String? taxCode;
+  final String? paymentPeriod; // e.g., 'Weekly', 'Monthly'
 
   UserProfile({
     required this.uid,
@@ -32,8 +43,22 @@ class UserProfile {
     this.timeOffQuota = 0.0,
     this.defaultDailyHours = 8.0,
     this.payrollId,
-    this.siteClockInNumber, // <-- NEW
+    this.siteClockInNumber,
+    this.hourlyRate = 0.0,
+    this.standardDeduction = 0.0,
+    this.loanRepayment = 0.0,
+    this.pensionPercentage = 0.0,
+    // --- NEW PAYROLL FIELDS ---
+    this.niNumber,
+    this.niCategory,
+    this.taxCode,
+    this.paymentPeriod,
   });
+
+  String get fullName {
+    final name = '$firstName $lastName'.trim();
+    return name.isEmpty ? email : name;
+  }
 
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
@@ -51,7 +76,16 @@ class UserProfile {
       timeOffQuota: (data['timeOffQuota'] ?? 0.0).toDouble(),
       defaultDailyHours: (data['defaultDailyHours'] ?? 8.0).toDouble(),
       payrollId: data['payrollId'],
-      siteClockInNumber: data['siteClockInNumber'], // <-- NEW
+      siteClockInNumber: data['siteClockInNumber'],
+      hourlyRate: (data['hourlyRate'] ?? 0.0).toDouble(),
+      standardDeduction: (data['standardDeduction'] ?? 0.0).toDouble(),
+      loanRepayment: (data['loanRepayment'] ?? 0.0).toDouble(),
+      pensionPercentage: (data['pensionPercentage'] ?? 0.0).toDouble(),
+      // --- NEW PAYROLL FIELDS ---
+      niNumber: data['niNumber'],
+      niCategory: data['niCategory'],
+      taxCode: data['taxCode'],
+      paymentPeriod: data['paymentPeriod'],
     );
   }
 
@@ -69,7 +103,16 @@ class UserProfile {
       'timeOffQuota': timeOffQuota,
       'defaultDailyHours': defaultDailyHours,
       'payrollId': payrollId,
-      'siteClockInNumber': siteClockInNumber, // <-- NEW
+      'siteClockInNumber': siteClockInNumber,
+      'hourlyRate': hourlyRate,
+      'standardDeduction': standardDeduction,
+      'loanRepayment': loanRepayment,
+      'pensionPercentage': pensionPercentage,
+      // --- NEW PAYROLL FIELDS ---
+      'niNumber': niNumber,
+      'niCategory': niCategory,
+      'taxCode': taxCode,
+      'paymentPeriod': paymentPeriod,
     };
   }
 }

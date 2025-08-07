@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'clocker_report_page.dart';
-import 'projections_report_page.dart';
+import 'weekly_manager_report_page.dart'; // UPDATED import
 import 'scheduled_vs_clocked_report_page.dart';
 import 'weekly_grid_report_page.dart';
 import 'payroll_page.dart';
@@ -22,7 +22,6 @@ class ReportsPage extends StatelessWidget {
         children: [
           Card(
             child: ListTile(
-              // REMOVED: color: Colors.teal
               leading: const Icon(Icons.payments_outlined),
               title: const Text('Payroll Export'),
               subtitle: const Text('Generate CSV files for Sage and Xero.'),
@@ -33,7 +32,6 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              // REMOVED: color: Colors.cyan
               leading: const Icon(Icons.beach_access_outlined),
               title: const Text('Time Off Records'),
               subtitle: const Text('CSV/PDF of all approved/denied time off.'),
@@ -44,29 +42,28 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              // REMOVED: color: Colors.green
               leading: const Icon(Icons.calendar_view_week),
               title: const Text('Weekly Schedule PDF'),
-              subtitle: const Text('Printable grid view of the week\'s schedule.'),
+              subtitle: const Text('Printable grid view of the team\'s schedule.'),
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const WeeklyGridReportPage()));
               },
             ),
           ),
+          // --- THIS LIST TILE IS UPDATED ---
           Card(
             child: ListTile(
-              // REMOVED: color: Colors.orange
               leading: const Icon(Icons.assessment_outlined),
-              title: const Text('Projections vs. Scheduled'),
-              subtitle: const Text('PDF comparing projected vs. scheduled hours.'),
+              title: const Text('Weekly Manager Report'),
+              subtitle: const Text('PDF of projections & scheduled staff by site.'),
               onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const ProjectionsReportPage()));
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const WeeklyManagerReportPage()));
               },
             ),
           ),
+          // --- END UPDATE ---
           Card(
             child: ListTile(
-              // REMOVED: color: Colors.purple
               leading: const Icon(Icons.compare_arrows),
               title: const Text('Scheduled vs. Clocked-In'),
               subtitle: const Text('PDF comparing scheduled vs. actual hours.'),
@@ -77,7 +74,6 @@ class ReportsPage extends StatelessWidget {
           ),
           Card(
             child: ListTile(
-              // REMOVED: color: Colors.blue
               leading: const Icon(Icons.timer_outlined),
               title: const Text('Detailed Clocker Report'),
               subtitle: const Text('CSV/PDF of all clock-in/out entries.'),

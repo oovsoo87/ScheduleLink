@@ -14,10 +14,8 @@ class ThemeProvider with ChangeNotifier {
     _loadThemePreference();
   }
 
-  // Define our custom turquoise green color
   static const Color _primaryColor = Color(0xFF4DB6AC);
 
-  // Define the light theme
   ThemeData get lightTheme => ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
@@ -27,13 +25,11 @@ class ThemeProvider with ChangeNotifier {
       brightness: Brightness.light,
     ),
     textTheme: GoogleFonts.poppinsTextTheme(ThemeData.light().textTheme),
-    // --- THIS IS THE ONLY SECTION THAT HAS CHANGED ---
     appBarTheme: AppBarTheme(
-      backgroundColor: _primaryColor, // Changed from white to turquoise
-      foregroundColor: Colors.white,   // Changed from black to white for readability
+      backgroundColor: _primaryColor,
+      foregroundColor: Colors.white,
       elevation: 1,
     ),
-    // --- END CHANGE ---
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: _primaryColor,
@@ -50,7 +46,6 @@ class ThemeProvider with ChangeNotifier {
     ),
   );
 
-  // Define the dark theme
   ThemeData get darkTheme => ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
@@ -98,7 +93,9 @@ class ThemeProvider with ChangeNotifier {
 
   void _loadThemePreference() async {
     final prefs = await SharedPreferences.getInstance();
-    final isDark = prefs.getBool(_themePreferenceKey) ?? false;
+    // --- THIS IS THE ONLY CHANGE ---
+    // If no preference is saved, default to 'true' (dark mode).
+    final isDark = prefs.getBool(_themePreferenceKey) ?? true;
     _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
     notifyListeners();
   }

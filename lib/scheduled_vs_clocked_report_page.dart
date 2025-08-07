@@ -1,6 +1,7 @@
 // lib/scheduled_vs_clocked_report_page.dart
 
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -10,26 +11,48 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:intl/intl.dart';
+import 'models/shift_model.dart';
+import 'models/user_profile.dart';
+import 'models/site_model.dart';
+
+// --- UPDATED DATA MODELS FOR THIS REPORT ---
 
 class TimeEntry {
   final DateTime clockIn;
   final DateTime? clockOut;
-  final String clockInAddress;
-  double get duration => (clockOut?.difference(clockIn).inMinutes ?? 0) / 60.0;
-
-  TimeEntry({required this.clockIn, this.clockOut, this.clockInAddress = 'N/A'});
+  TimeEntry({required this.clockIn, this.clockOut});
 }
 
-class AttendanceReportRow {
+class ComparisonRow {
+  final String siteId;
+  final String siteName;
+  final String userId;
   final String userName;
-  double scheduledHours;
-  final List<TimeEntry> clockedEntries;
+  final DateTime scheduledStart;
+  final DateTime scheduledEnd;
+  final DateTime? actualStart;
+  final DateTime? actualEnd;
 
-  double get clockedHours => clockedEntries.fold(0, (sum, entry) => sum + entry.duration);
-  double get variance => clockedHours - scheduledHours;
+  ComparisonRow({
+    required this.siteId,
+    required this.siteName,
+    required this.userId,
+    required this.userName,
+    required this.scheduledStart,
+    required this.scheduledEnd,
+    this.actualStart,
+    this.actualEnd,
+  });
 
-  AttendanceReportRow({required this.userName, this.scheduledHours = 0, List<TimeEntry>? entries})
-      : clockedEntries = entries ?? [];
+  double get scheduledHours => scheduledEnd.difference(scheduledStart).inSeconds / 3600.0;
+  double get actualHours => actualEnd != null && actualStart != null ? actualEnd!.difference(actualStart!).inSeconds / 3600.0 : 0;
+  double get variance => actualHours - scheduledHours;
+}
+
+class UserTotals {
+  double totalScheduled = 0;
+  double totalActual = 0;
+  double get totalVariance => totalActual - totalScheduled;
 }
 
 class ScheduledVsClockedReportPage extends StatefulWidget {
@@ -42,13 +65,37 @@ class ScheduledVsClockedReportPage extends StatefulWidget {
 class _ScheduledVsClockedReportPageState extends State<ScheduledVsClockedReportPage> {
   DateTimeRange? _selectedDateRange;
   bool _isGenerating = false;
+  bool _isLoadingFilters = true;
+
+  // --- NEW: State for dropdown filters ---
+  List<Site> _siteList = [];
+  List<UserProfile> _staffList = [];
+  Site? _selectedSite;
+  UserProfile? _selectedStaff;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFilterData();
+  }
+
+  // --- NEW: Function to load data for filters ---
+  Future<void> _fetchFilterData() async {
+    final sitesSnapshot = await FirebaseFirestore.instance.collection('sites').get();
+    final staffSnapshot = await FirebaseFirestore.instance.collection('users').where('isActive', isEqualTo: true).get();
+    if(mounted) {
+      setState(() {
+        _siteList = sitesSnapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
+        _staffList = staffSnapshot.docs.map((doc) => UserProfile.fromFirestore(doc)).toList();
+        _isLoadingFilters = false;
+      });
+    }
+  }
 
   Future<void> _selectDateRange() async {
     final DateTimeRange? picked = await showDateRangePicker(context: context, firstDate: DateTime(2024), lastDate: DateTime.now());
     if (picked != null) {
-      setState(() {
-        _selectedDateRange = picked;
-      });
+      setState(() { _selectedDateRange = picked; });
     }
   }
 
@@ -59,9 +106,22 @@ class _ScheduledVsClockedReportPageState extends State<ScheduledVsClockedReportP
     }
     setState(() => _isGenerating = true);
     try {
-      final data = await _fetchReportData(_selectedDateRange!);
+      // 1. Fetch all data
+      var data = await _fetchReportData(_selectedDateRange!);
+
+      // 2. Apply filters
+      if (_selectedSite != null) {
+        data = data.where((row) => row.siteId == _selectedSite!.id).toList();
+      }
+      if (_selectedStaff != null) {
+        data = data.where((row) => row.userId == _selectedStaff!.uid).toList();
+      }
+
+      // 3. Sort the data to ensure correct order
+      data.sort((a, b) => a.scheduledStart.compareTo(b.scheduledStart));
+
       if (data.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No data found for this period.')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No data found for the selected filters.')));
       } else {
         await _generatePdf(data);
       }
@@ -74,14 +134,25 @@ class _ScheduledVsClockedReportPageState extends State<ScheduledVsClockedReportP
     }
   }
 
-  Future<Map<String, AttendanceReportRow>> _fetchReportData(DateTimeRange range) async {
-    Map<String, AttendanceReportRow> reportMap = {};
-
+  Future<List<ComparisonRow>> _fetchReportData(DateTimeRange range) async {
     final usersSnapshot = await FirebaseFirestore.instance.collection('users').where('isActive', isEqualTo: true).get();
-    for (var doc in usersSnapshot.docs) {
+    final sitesSnapshot = await FirebaseFirestore.instance.collection('sites').get();
+    final userMap = {for (var doc in usersSnapshot.docs) doc.id: UserProfile.fromFirestore(doc)};
+    final siteMap = {for (var doc in sitesSnapshot.docs) doc.id: doc['siteName']};
+
+    final timeEntriesSnapshot = await FirebaseFirestore.instance.collection('timeEntries')
+        .where('clockInTime', isGreaterThanOrEqualTo: range.start)
+        .where('clockInTime', isLessThanOrEqualTo: range.end.add(const Duration(days: 1)))
+        .get();
+
+    final Map<String, List<TimeEntry>> userTimeEntries = {};
+    for (final doc in timeEntriesSnapshot.docs) {
       final data = doc.data() as Map<String, dynamic>;
-      final name = '${data['firstName']} ${data['lastName']}'.trim();
-      reportMap[doc.id] = AttendanceReportRow(userName: name.isEmpty ? data['email'] : name);
+      final userId = data['userId'];
+      final key = '$userId-${DateFormat('yyyy-MM-dd').format((data['clockInTime'] as Timestamp).toDate())}';
+      userTimeEntries.putIfAbsent(key, () => []).add(
+          TimeEntry(clockIn: (data['clockInTime'] as Timestamp).toDate(), clockOut: (data['clockOutTime'] as Timestamp?)?.toDate())
+      );
     }
 
     final schedulesSnapshot = await FirebaseFirestore.instance.collection('schedules')
@@ -89,100 +160,138 @@ class _ScheduledVsClockedReportPageState extends State<ScheduledVsClockedReportP
         .where('weekStartDate', isLessThanOrEqualTo: range.end)
         .get();
 
+    List<ComparisonRow> finalData = [];
+
     for (var scheduleDoc in schedulesSnapshot.docs) {
-      final data = scheduleDoc.data() as Map<String, dynamic>;
-      if (data['shifts'] != null) {
-        final shifts = data['shifts'] as List<dynamic>;
-        for (var shiftData in shifts) {
-          final userId = shiftData['userId'];
-          final startTime = (shiftData['startTime'] as Timestamp).toDate();
-          if (startTime.isAfter(range.start) && startTime.isBefore(range.end.add(const Duration(days: 1)))) {
-            final endTime = (shiftData['endTime'] as Timestamp).toDate();
-            final duration = endTime.difference(startTime).inMinutes / 60.0;
-            if (reportMap.containsKey(userId)) {
-              reportMap[userId]!.scheduledHours += duration;
-            }
+      final shifts = (scheduleDoc.data()['shifts'] as List<dynamic>? ?? []).map((s) => Shift.fromMap(s));
+      for (final shift in shifts) {
+        if (shift.startTime.isAfter(range.start) && shift.startTime.isBefore(range.end.add(const Duration(days: 1)))) {
+          final user = userMap[shift.userId];
+          if (user == null) continue;
+
+          final key = '${shift.userId}-${DateFormat('yyyy-MM-dd').format(shift.startTime)}';
+          final matchingEntries = userTimeEntries[key];
+
+          TimeEntry? bestMatch;
+          if (matchingEntries != null) {
+            bestMatch = matchingEntries.firstWhere((e) => !e.clockIn.isBefore(shift.startTime), orElse: () => matchingEntries.first);
           }
+
+          finalData.add(ComparisonRow(
+            siteId: shift.siteId,
+            siteName: siteMap[shift.siteId] ?? 'Unknown Site',
+            userId: user.uid,
+            userName: user.fullName,
+            scheduledStart: shift.startTime,
+            scheduledEnd: shift.endTime,
+            actualStart: bestMatch?.clockIn,
+            actualEnd: bestMatch?.clockOut,
+          ));
         }
       }
     }
-
-    final timeEntriesSnapshot = await FirebaseFirestore.instance.collection('timeEntries')
-        .where('clockInTime', isGreaterThanOrEqualTo: range.start)
-        .where('clockInTime', isLessThanOrEqualTo: range.end.add(const Duration(days: 1)))
-        .get();
-
-    for (var entryDoc in timeEntriesSnapshot.docs) {
-      final data = entryDoc.data() as Map<String, dynamic>;
-      final userId = data['userId'];
-      if (reportMap.containsKey(userId)) {
-        final clockIn = (data['clockInTime'] as Timestamp).toDate();
-        final clockOut = (data['clockOutTime'] as Timestamp?)?.toDate();
-        final clockInLocation = data['clockInLocation'] as Map<String, dynamic>?;
-
-        reportMap[userId]!.clockedEntries.add(TimeEntry(
-            clockIn: clockIn,
-            clockOut: clockOut,
-            clockInAddress: clockInLocation?['address'] ?? 'N/A'
-        ));
-      }
-    }
-
-    reportMap.removeWhere((key, value) => value.scheduledHours == 0 && value.clockedEntries.isEmpty);
-    return reportMap;
+    return finalData;
   }
 
-  Future<void> _generatePdf(Map<String, AttendanceReportRow> data) async {
+  Future<void> _generatePdf(List<ComparisonRow> data) async {
     final pdf = pw.Document();
-    pdf.addPage(
-        pw.MultiPage(
-          pageFormat: PdfPageFormat.a4,
-          build: (context) {
-            List<pw.Widget> widgets = [];
-            widgets.add(pw.Header(level: 0, text: 'Scheduled vs. Clocked Hours Report'));
-            widgets.add(pw.Text('Date Range: ${DateFormat.yMd().format(_selectedDateRange!.start)} - ${DateFormat.yMd().format(_selectedDateRange!.end)}'));
 
-            for (final row in data.values) {
-              widgets.add(pw.Wrap(
-                  children: [
-                    pw.SizedBox(height: 30),
-                    pw.Header(level: 1, text: row.userName),
-                    pw.RichText(
-                        text: pw.TextSpan(
-                            children: [
-                              pw.TextSpan(text: 'Total Scheduled: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                              pw.TextSpan(text: '${row.scheduledHours.toStringAsFixed(2)} hrs, '),
-                              pw.TextSpan(text: 'Total Clocked: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                              pw.TextSpan(text: '${row.clockedHours.toStringAsFixed(2)} hrs, '),
-                              pw.TextSpan(text: 'Variance: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                              pw.TextSpan(text: '${row.variance.toStringAsFixed(2)} hrs', style: pw.TextStyle(color: row.variance >= 0 ? PdfColors.green : PdfColors.red)),
-                            ]
-                        )
-                    ),
-                    pw.SizedBox(height: 10),
-                    if (row.clockedEntries.isNotEmpty)
-                      pw.Table.fromTextArray(
-                          headers: ['Date', 'Clock In', 'Clock Out', 'Duration (hrs)', 'Clock In Location'],
-                          data: row.clockedEntries.map((entry) => [
-                            DateFormat('yyyy-MM-dd').format(entry.clockIn),
-                            DateFormat('HH:mm:ss').format(entry.clockIn),
-                            entry.clockOut != null ? DateFormat('HH:mm:ss').format(entry.clockOut!) : 'Still Clocked In',
-                            entry.duration.toStringAsFixed(2),
-                            entry.clockInAddress,
-                          ]).toList(),
-                          border: pw.TableBorder.all(),
-                          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                          cellAlignment: pw.Alignment.centerLeft,
-                          columnWidths: { 4: const pw.FlexColumnWidth(2) }
-                      )
-                  ]
-              ));
-            }
-            return widgets;
-          },
-        )
+    final font = pw.Font.ttf(await rootBundle.load("assets/fonts/Poppins-Regular.ttf"));
+    final boldFont = pw.Font.ttf(await rootBundle.load("assets/fonts/Poppins-Bold.ttf"));
+    final theme = pw.ThemeData.withFont(base: font, bold: boldFont);
+    final turquoiseColor = PdfColor.fromHex('4DB6AC');
+
+    final Map<String, UserTotals> userTotals = {};
+    for (final row in data) {
+      userTotals.putIfAbsent(row.userName, () => UserTotals());
+      userTotals[row.userName]!.totalScheduled += row.scheduledHours;
+      userTotals[row.userName]!.totalActual += row.actualHours;
+    }
+
+    final Map<String, Map<String, List<ComparisonRow>>> groupedData = {};
+    for (final row in data) {
+      groupedData.putIfAbsent(row.siteName, () => {}).putIfAbsent(row.userName, () => []).add(row);
+    }
+    final sortedSites = groupedData.keys.toList()..sort();
+
+    List<pw.Widget> pageWidgets = [];
+    bool firstSite = true;
+    for (final site in sortedSites) {
+      if (!firstSite) {
+        pageWidgets.add(pw.Container(height: 8, color: turquoiseColor, margin: const pw.EdgeInsets.symmetric(vertical: 10)));
+      }
+      pageWidgets.add(pw.Header(level: 1, text: site));
+      final usersInData = groupedData[site]!;
+      final sortedUsers = usersInData.keys.toList()..sort();
+
+      for (final userName in sortedUsers) {
+        final totals = userTotals[userName]!;
+        final userRows = usersInData[userName]!;
+
+        final summaryTable = pw.Table(
+            columnWidths: { 0: const pw.FlexColumnWidth(1), 1: const pw.FlexColumnWidth(1) },
+            children: [
+              pw.TableRow(children: [ pw.Text('Total Scheduled:'), pw.Text('${totals.totalScheduled.toStringAsFixed(2)} hrs', textAlign: pw.TextAlign.right) ]),
+              pw.TableRow(children: [ pw.Text('Total Clocked:'), pw.Text('${totals.totalActual.toStringAsFixed(2)} hrs', textAlign: pw.TextAlign.right) ]),
+              pw.TableRow(children: [ pw.Text('Total Variance:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), pw.Text('${totals.totalVariance.toStringAsFixed(2)} hrs', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: totals.totalVariance >= 0 ? PdfColors.green : PdfColors.red), textAlign: pw.TextAlign.right) ]),
+            ]
+        );
+
+        final headers = ['Date', 'Scheduled (In-Out)', 'Actual (In-Out)', 'Variance (Hrs)'];
+        final detailTable = pw.Table.fromTextArray(
+          headers: headers,
+          data: userRows.map((row) {
+            final scheduledText = '${DateFormat('HH:mm').format(row.scheduledStart)}-${DateFormat('HH:mm').format(row.scheduledEnd)}';
+            final actualText = row.actualStart != null && row.actualEnd != null
+                ? '${DateFormat('HH:mm').format(row.actualStart!)}-${DateFormat('HH:mm').format(row.actualEnd!)}'
+                : 'No Clock-in';
+            return [
+              DateFormat('dd/MM/yy').format(row.scheduledStart),
+              scheduledText,
+              actualText,
+              row.variance.toStringAsFixed(2),
+            ];
+          }).toList(),
+          border: pw.TableBorder.all(color: PdfColors.grey400),
+          headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+          headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+          cellStyle: const pw.TextStyle(fontSize: 9),
+          cellAlignments: { 3: pw.Alignment.centerRight },
+        );
+
+        pageWidgets.add(pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Header(level: 2, text: userName),
+              pw.SizedBox(width: 250, child: summaryTable),
+              pw.SizedBox(height: 8),
+              detailTable,
+              pw.SizedBox(height: 20),
+            ]
+        ));
+      }
+      firstSite = false;
+    }
+
+    final DateFormat formatter = DateFormat('dd/MM/yyyy');
+    final String dateRangeText = '${formatter.format(_selectedDateRange!.start)} - ${formatter.format(_selectedDateRange!.end)}';
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        theme: theme,
+        header: (context) => pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('Scheduled vs. Clocked Report', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+              pw.Text(dateRangeText),
+            ]
+        ),
+        build: (context) => pageWidgets,
+      ),
     );
-    final fileName = 'attendance_report_detailed_${DateTime.now().toIso8601String()}.pdf';
+
+    final fileName = 'scheduled_vs_clocked_${DateTime.now().toIso8601String()}.pdf';
     final directory = await getApplicationDocumentsDirectory();
     final path = '${directory.path}/$fileName';
     final file = File(path);
@@ -212,13 +321,39 @@ class _ScheduledVsClockedReportPageState extends State<ScheduledVsClockedReportP
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Scheduled vs. Clocked Report')),
-      body: Padding(
+      body: _isLoadingFilters
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            // --- NEW FILTERS ADDED ---
+            DropdownButtonFormField<Site>(
+              value: _selectedSite,
+              hint: const Text('All Sites'),
+              items: [
+                const DropdownMenuItem<Site>(value: null, child: Text('All Sites')),
+                ..._siteList.map((site) => DropdownMenuItem(value: site, child: Text(site.siteName))),
+              ],
+              onChanged: (site) => setState(() => _selectedSite = site),
+              decoration: const InputDecoration(labelText: 'Filter by Site'),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<UserProfile>(
+              value: _selectedStaff,
+              hint: const Text('All Staff'),
+              items: [
+                const DropdownMenuItem<UserProfile>(value: null, child: Text('All Staff')),
+                ..._staffList.map((user) => DropdownMenuItem(value: user, child: Text(user.fullName))),
+              ],
+              onChanged: (user) => setState(() => _selectedStaff = user),
+              decoration: const InputDecoration(labelText: 'Filter by Staff Member'),
+            ),
+            const SizedBox(height: 16),
             ListTile(
+              contentPadding: EdgeInsets.zero,
               title: const Text('Date Range'),
-              subtitle: Text(_selectedDateRange == null ? 'Not Set' : '${DateFormat.yMd().format(_selectedDateRange!.start)} - ${DateFormat.yMd().format(_selectedDateRange!.end)}'),
+              subtitle: Text(_selectedDateRange == null ? 'Not Set' : '${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.start)} - ${DateFormat('dd/MM/yyyy').format(_selectedDateRange!.end)}'),
               trailing: const Icon(Icons.calendar_today),
               onTap: _selectDateRange,
             ),
