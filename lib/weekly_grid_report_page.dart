@@ -26,6 +26,9 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
   bool _isGenerating = false;
   DateTime _displayDate = DateTime.now();
 
+  // --- NEW: Controller for the custom name field ---
+  final _customNameController = TextEditingController();
+
   List<UserProfile> _staffList = [];
   Map<String, String> _siteNames = {};
   Map<String, String> _siteColorsHex = {};
@@ -37,8 +40,14 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
     _fetchData();
   }
 
+  @override
+  void dispose() {
+    // --- NEW: Dispose the controller ---
+    _customNameController.dispose();
+    super.dispose();
+  }
+
   Future<void> _fetchData() async {
-    // ... (This function remains unchanged)
     setState(() => _isLoadingFilters = true);
     try {
       final staffFuture = FirebaseFirestore.instance.collection('users').where('isActive', isEqualTo: true).get();
@@ -69,7 +78,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
   }
 
   Future<void> _showStaffFilterDialog() async {
-    // ... (This function remains unchanged)
     await showDialog(
       context: context,
       builder: (context) {
@@ -114,7 +122,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
   }
 
   Future<void> _generateReport() async {
-    // ... (This function remains unchanged)
     setState(() => _isGenerating = true);
     try {
       final weekShifts = await _fetchScheduleForWeek(_displayDate);
@@ -131,7 +138,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
   }
 
   Future<List<Shift>> _fetchScheduleForWeek(DateTime date) async {
-    // ... (This function remains unchanged)
     DateTime startOfWeek = date.subtract(Duration(days: date.weekday - 1));
     DateTime startOfDay = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
 
@@ -144,17 +150,12 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
     return shiftsData.map((data) => Shift.fromMap(data)).toList();
   }
 
-  // --- NEW: Helper function to determine text color based on background ---
   PdfColor _getTextColorForBackground(String hexColor) {
     try {
       final color = PdfColor.fromHex(hexColor);
-      // Formula to calculate luminance (brightness).
-      // If luminance is > 0.5, the color is light, so we use black text.
-      // Otherwise, the color is dark, and we use white text.
       double luminance = (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue);
       return luminance > 0.5 ? PdfColors.black : PdfColors.white;
     } catch (e) {
-      // Fallback in case of a bad hex color
       return PdfColors.white;
     }
   }
@@ -206,9 +207,7 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                 children: dayShifts.map((shift) {
                   final siteColorHex = _siteColorsHex[shift.siteId] ?? '9E9E9E';
                   final siteColor = PdfColor.fromHex(siteColorHex);
-                  final textColor = _getTextColorForBackground(siteColorHex); // <-- UPDATED
-
-                  // Include the site name in the text
+                  final textColor = _getTextColorForBackground(siteColorHex);
                   final siteName = _siteNames[shift.siteId] ?? 'N/A';
                   final shiftText = '${DateFormat('HH:mm').format(shift.startTime)}-${DateFormat('HH:mm').format(shift.endTime)}\n$siteName';
 
@@ -219,7 +218,7 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                     margin: const pw.EdgeInsets.only(bottom: 2),
                     child: pw.Text(
                         shiftText,
-                        style: pw.TextStyle(fontSize: 8, color: textColor), // <-- UPDATED
+                        style: pw.TextStyle(fontSize: 8, color: textColor),
                         textAlign: pw.TextAlign.center
                     ),
                   );
@@ -230,6 +229,13 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
       tableRows.add(pw.TableRow(children: cells));
     }
 
+    // --- NEW: Header logic ---
+    final DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
+    final String formattedSundayDate = DateFormat('d MMMM yyyy').format(endOfWeek);
+    final String mainHeader = 'Team Weekly Schedule for Week Ending $formattedSundayDate';
+    final String customName = _customNameController.text.trim();
+    // --- END NEW ---
+
     pdf.addPage(
         pw.Page(
           pageFormat: PdfPageFormat.a4.landscape,
@@ -237,9 +243,19 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
             return pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  pw.Header(level: 0, text: 'Weekly Team Schedule'),
-                  pw.Text('Week of: ${_formatWeekRange(_displayDate)}'),
-                  pw.SizedBox(height: 20),
+                  pw.Header(level: 0, text: mainHeader),
+                  // --- NEW: Add custom name if provided ---
+                  if (customName.isNotEmpty)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.only(top: 4, bottom: 20),
+                      child: pw.Text(
+                        customName,
+                        style: pw.TextStyle(fontSize: 18, fontStyle: pw.FontStyle.italic),
+                      ),
+                    )
+                  else
+                    pw.SizedBox(height: 20),
+                  // --- END NEW ---
                   pw.Table(
                     border: pw.TableBorder.all(),
                     columnWidths: { 0: const pw.FlexColumnWidth(2.5) },
@@ -308,6 +324,16 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                 onPressed: _showStaffFilterDialog,
               ),
             ),
+            // --- NEW: Text field for custom name ---
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _customNameController,
+              decoration: const InputDecoration(
+                labelText: 'Custom Report Name (Optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            // --- END NEW ---
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,

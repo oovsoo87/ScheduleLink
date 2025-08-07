@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,31 +17,6 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
-
-  // NEW: State for the live clock
-  late String _timeString;
-  late String _dateString;
-
-  @override
-  void initState() {
-    _timeString = DateFormat('HH:mm:ss').format(DateTime.now());
-    _dateString = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
-    // Update the time every second
-    Timer.periodic(const Duration(seconds: 1), (Timer t) => _getTime());
-    super.initState();
-  }
-
-  void _getTime() {
-    final DateTime now = DateTime.now();
-    final String formattedTime = DateFormat('HH:mm:ss').format(now);
-    final String formattedDate = DateFormat('EEEE, d MMMM yyyy').format(now);
-    if(mounted) {
-      setState(() {
-        _timeString = formattedTime;
-        _dateString = formattedDate;
-      });
-    }
-  }
 
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
@@ -60,7 +34,6 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _signUp() async {
-    // ... (This function remains unchanged)
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
@@ -92,14 +65,12 @@ class _LoginPageState extends State<LoginPage> {
           padding: const EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
-            child: Column(
+            // --- UPDATED: Wrapped in a ListView to prevent overflow ---
+            child: ListView(
               children: [
-                Text('ScheduleLink', style: Theme.of(context).textTheme.headlineLarge),
-                const Spacer(),
-                // NEW: Date and Time Widget
-                Text(_dateString, style: Theme.of(context).textTheme.titleMedium),
-                Text(_timeString, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 48),
+                Text('ScheduleLink', style: Theme.of(context).textTheme.headlineLarge, textAlign: TextAlign.center),
+                const SizedBox(height: 72),
 
                 TextFormField(
                   controller: _emailController,
@@ -116,7 +87,6 @@ class _LoginPageState extends State<LoginPage> {
                 ),
                 const SizedBox(height: 24),
 
-                // NEW: Full width button
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -130,7 +100,7 @@ class _LoginPageState extends State<LoginPage> {
                   onPressed: _isLoading ? null : _signUp,
                   child: const Text('Don\'t have an account? Sign Up'),
                 ),
-                const Spacer(flex: 2),
+                const SizedBox(height: 48),
               ],
             ),
           ),

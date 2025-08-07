@@ -11,7 +11,6 @@ import 'models/site_model.dart';
 import 'add_shift_page.dart';
 
 class ManageSchedulePage extends StatefulWidget {
-  // This line is added to accept the user's profile
   final UserProfile userProfile;
   const ManageSchedulePage({super.key, required this.userProfile});
 
@@ -19,7 +18,6 @@ class ManageSchedulePage extends StatefulWidget {
   State<ManageSchedulePage> createState() => _ManageSchedulePageState();
 }
 
-// Helper function needed by this page
 bool _isSameDay(DateTime a, DateTime b) {
   return a.year == b.year && a.month == b.month && a.day == b.day;
 }
@@ -108,7 +106,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
           _allStaff = userProfiles;
           _allManagers = userProfiles.where((u) => u.role == 'supervisor' || u.role == 'admin').toList();
           _allShiftsByDay = shiftsMap;
-          _initializeFilter(); // Auto-filter based on role
+          _initializeFilter();
           _isLoading = false;
         });
       }
@@ -130,9 +128,9 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
   void _applyFilter() {
     Map<DateTime, List<Shift>> newFilteredMap = {};
 
-    if (_selectedFilter == null) { // "All Staff"
+    if (_selectedFilter == null) {
       newFilteredMap = Map.from(_allShiftsByDay);
-    } else if (_selectedFilter is UserProfile) { // A specific manager's team
+    } else if (_selectedFilter is UserProfile) {
       final manager = _selectedFilter as UserProfile;
       final staffIdsToShow = _allStaff
           .where((user) => user.directSupervisorId == manager.uid || user.uid == manager.uid)
@@ -172,7 +170,6 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     _selectedShifts.value = _getShiftsForDay(selectedDay);
   }
 
-  // (Omitted for brevity - all other functions from _deleteSingleShift to _buildSelectionAppBar are unchanged)
   Future<void> _deleteSingleShift(Shift shiftToDelete) async {
     final startOfWeek = _getStartOfWeek(shiftToDelete.startTime);
     final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
@@ -223,18 +220,15 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
   }
 
   DateTime _getStartOfWeek(DateTime date) {
+    // Assuming Monday is the first day of the week, matching the calendar
     final utcDate = DateTime.utc(date.year, date.month, date.day);
     return utcDate.subtract(Duration(days: utcDate.weekday - 1));
   }
 
   void _copySelectedShifts() {
     if (_selectedShiftsForCopy.isEmpty) return;
-
-    final startOfWeek = _getStartOfWeek(_focusedDay);
-
     setState(() {
       _copiedShifts = _selectedShiftsForCopy.toList();
-      _copiedWeekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
       _cancelSelectionMode();
     });
 
@@ -243,37 +237,39 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     );
   }
 
+  // --- THIS FUNCTION CONTAINS THE UPDATED PASTE LOGIC ---
   Future<void> _pasteWeek() async {
-    if (_copiedShifts.isEmpty || _copiedWeekStartDate == null) {
+    if (_copiedShifts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nothing to paste. Please copy shifts first.')));
       return;
     }
 
-    final destStartOfWeek = _getStartOfWeek(_focusedDay);
-
-    if(_isSameDay(destStartOfWeek, _copiedWeekStartDate!)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot paste into the same week.'), backgroundColor: Colors.orange));
+    // New safety check: ensure a day is selected.
+    if (_selectedDay == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a day to paste the shifts onto.')));
       return;
     }
 
     setState(() => _isLoading = true);
 
+    // The destination date for all copied shifts is the selected day.
+    final DateTime destDate = _selectedDay!;
+
+    // Find the start of the week for the destination date to save in the correct Firestore document.
+    final destStartOfWeek = _getStartOfWeek(destDate);
+
     List<Map<String, dynamic>> newShiftsToSave = [];
     for (final copiedShift in _copiedShifts) {
-      final sourceStartOfWeek = _getStartOfWeek(copiedShift.startTime);
-      final dayOffset = copiedShift.startTime.difference(sourceStartOfWeek).inDays;
-
-      final newDate = destStartOfWeek.add(Duration(days: dayOffset));
-
-      final newStartTime = DateTime(newDate.year, newDate.month, newDate.day, copiedShift.startTime.hour, copiedShift.startTime.minute);
-      final newEndTime = DateTime(newDate.year, newDate.month, newDate.day, copiedShift.endTime.hour, copiedShift.endTime.minute);
+      // Create the new start and end times based on the selected destination date.
+      final newStartTime = DateTime(destDate.year, destDate.month, destDate.day, copiedShift.startTime.hour, copiedShift.startTime.minute);
+      final newEndTime = DateTime(destDate.year, destDate.month, destDate.day, copiedShift.endTime.hour, copiedShift.endTime.minute);
 
       final newShift = Shift(
         userId: copiedShift.userId,
         siteId: copiedShift.siteId,
         startTime: newStartTime,
         endTime: newEndTime,
-        shiftId: FirebaseFirestore.instance.collection('schedules').doc().id,
+        shiftId: FirebaseFirestore.instance.collection('schedules').doc().id, // Generate a new unique ID
         notes: copiedShift.notes,
       );
       newShiftsToSave.add(newShift.toMap());
@@ -294,7 +290,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     }
 
     if(mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pasted ${newShiftsToSave.length} shifts to week of ${DateFormat.yMd().format(destStartOfWeek)}.'), backgroundColor: Colors.green)
+        SnackBar(content: Text('Pasted ${newShiftsToSave.length} shifts to ${DateFormat.yMd().format(destDate)}.'), backgroundColor: Colors.green)
     );
 
     setState(() {
@@ -303,6 +299,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
 
     await _fetchData();
   }
+  // --- END OF UPDATED FUNCTION ---
 
   void _startSelectionMode(Shift shift) {
     setState(() {
@@ -385,7 +382,6 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
       ],
     );
   }
-
 
   @override
   Widget build(BuildContext context) {

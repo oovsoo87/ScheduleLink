@@ -9,7 +9,12 @@ class Site {
   final String siteGroup;
   final double projectedWeeklyHours;
   final String siteColor;
-  final List<Map<String, String>> presetShifts; // <-- NEW
+  final List<Map<String, String>> presetShifts;
+
+  // --- NEW GEO-FENCE FIELDS ---
+  final double? geofenceLatitude;
+  final double? geofenceLongitude;
+  final double? geofenceRadius;
 
   Site({
     required this.id,
@@ -18,13 +23,15 @@ class Site {
     required this.siteGroup,
     required this.projectedWeeklyHours,
     required this.siteColor,
-    required this.presetShifts, // <-- NEW
+    required this.presetShifts,
+    this.geofenceLatitude,
+    this.geofenceLongitude,
+    this.geofenceRadius,
   });
 
   factory Site.fromFirestore(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
 
-    // Safely parse the list of presets from Firestore
     List<Map<String, String>> presets = [];
     if (data['presetShifts'] is List) {
       for (var item in (data['presetShifts'] as List)) {
@@ -45,7 +52,10 @@ class Site {
       siteGroup: data['siteGroup'] ?? '',
       projectedWeeklyHours: (data['projectedWeeklyHours'] ?? 0).toDouble(),
       siteColor: data['siteColor'] ?? '9E9E9E',
-      presetShifts: presets, // <-- NEW
+      presetShifts: presets,
+      geofenceLatitude: data['geofenceLatitude'],
+      geofenceLongitude: data['geofenceLongitude'],
+      geofenceRadius: data['geofenceRadius'],
     );
   }
 
@@ -56,7 +66,10 @@ class Site {
       'siteGroup': siteGroup,
       'projectedWeeklyHours': projectedWeeklyHours,
       'siteColor': siteColor,
-      'presetShifts': presetShifts, // <-- NEW
+      'presetShifts': presetShifts,
+      'geofenceLatitude': geofenceLatitude,
+      'geofenceLongitude': geofenceLongitude,
+      'geofenceRadius': geofenceRadius,
     };
   }
 }

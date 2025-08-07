@@ -1,5 +1,3 @@
-// lib/time_off_history_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -71,10 +69,16 @@ class _TimeOffHistoryPageState extends State<TimeOffHistoryPage> {
             itemCount: requests.length,
             itemBuilder: (context, index) {
               final request = requests[index];
+              // --- DATE FORMAT IS CHANGED HERE ---
+              final DateFormat formatter = DateFormat('dd/MM/yyyy');
+              final String startDate = formatter.format(request.startDate);
+              final String endDate = formatter.format(request.endDate);
+              // --- END CHANGE ---
+
               return Card(
                 margin: const EdgeInsets.symmetric(vertical: 4.0),
                 child: ListTile(
-                  title: Text('Dates: ${DateFormat.yMd().format(request.startDate)} - ${DateFormat.yMd().format(request.endDate)}'),
+                  title: Text('Dates: $startDate - $endDate'),
                   subtitle: Text(request.reason, maxLines: 2, overflow: TextOverflow.ellipsis),
                   trailing: _buildStatusChip(request.status),
                 ),

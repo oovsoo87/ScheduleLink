@@ -83,4 +83,5 @@ class DefaultFirebaseOptions {
     authDomain: 'schedulelink-28446.firebaseapp.com',
     storageBucket: 'schedulelink-28446.firebasestorage.app',
   );
+
 }
