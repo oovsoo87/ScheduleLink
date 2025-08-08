@@ -6,13 +6,20 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'auth_gate.dart';
 import 'firebase_options.dart';
-import 'services/theme_provider.dart'; // <-- Corrected import path
+import 'services/theme_provider.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
+
+  // Initialize timezone database
+  tz.initializeTimeZones();
+  // Set the local timezone for the app instance to 'Europe/London'
+  tz.setLocalLocation(tz.getLocation('Europe/London'));
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,

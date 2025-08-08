@@ -31,6 +31,7 @@ dependencies:
   geocoding: ^3.0.0
   google_fonts: ^6.2.1
   google_maps_flutter: ^2.6.1
+  timezone: ^0.9.4
 
 dev_dependencies:
   flutter_test:
@@ -47,6 +48,12 @@ flutter_launcher_icons:
   image_path: "assets/icon/icon.png"
   adaptive_icon_background: "#FFFFFF" # Your signature turquoise color
   adaptive_icon_foreground: "assets/icon/icon_foreground.png" # Your logo with a transparent background
+
+  web:
+    generate: true
+    image_path: "assets/icon/icon.png"
+    background_color: "#FFFFFF"
+    theme_color: "#4DB6AC"
 
 flutter:
   uses-material-design: true

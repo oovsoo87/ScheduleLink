@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 import 'models/shift_model.dart';
 import 'models/user_profile.dart';
@@ -36,7 +37,6 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
   Map<String, Color> _siteColors = {};
 
   List<Shift> _copiedShifts = [];
-  DateTime? _copiedWeekStartDate;
   bool _isSelectionMode = false;
   Set<Shift> _selectedShiftsForCopy = {};
 
@@ -83,7 +83,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
       final scheduleSnapshot = results[2] as QuerySnapshot;
 
       final userProfiles = usersSnapshot.docs.map((doc) => UserProfile.fromFirestore(doc)).toList();
-      _userNames = {for (var user in userProfiles) user.uid: '${user.firstName} ${user.lastName}'.trim()};
+      _userNames = {for (var user in userProfiles) user.uid: user.fullName};
 
       final sites = sitesSnapshot.docs.map((doc) => Site.fromFirestore(doc)).toList();
       _siteNames = {for (var site in sites) site.id: site.siteName};
@@ -220,7 +220,6 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
   }
 
   DateTime _getStartOfWeek(DateTime date) {
-    // Assuming Monday is the first day of the week, matching the calendar
     final utcDate = DateTime.utc(date.year, date.month, date.day);
     return utcDate.subtract(Duration(days: utcDate.weekday - 1));
   }
@@ -237,14 +236,11 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
     );
   }
 
-  // --- THIS FUNCTION CONTAINS THE UPDATED PASTE LOGIC ---
   Future<void> _pasteWeek() async {
     if (_copiedShifts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nothing to paste. Please copy shifts first.')));
       return;
     }
-
-    // New safety check: ensure a day is selected.
     if (_selectedDay == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a day to paste the shifts onto.')));
       return;
@@ -252,24 +248,21 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
 
     setState(() => _isLoading = true);
 
-    // The destination date for all copied shifts is the selected day.
     final DateTime destDate = _selectedDay!;
-
-    // Find the start of the week for the destination date to save in the correct Firestore document.
     final destStartOfWeek = _getStartOfWeek(destDate);
 
+    final location = tz.getLocation('Europe/London');
     List<Map<String, dynamic>> newShiftsToSave = [];
     for (final copiedShift in _copiedShifts) {
-      // Create the new start and end times based on the selected destination date.
-      final newStartTime = DateTime(destDate.year, destDate.month, destDate.day, copiedShift.startTime.hour, copiedShift.startTime.minute);
-      final newEndTime = DateTime(destDate.year, destDate.month, destDate.day, copiedShift.endTime.hour, copiedShift.endTime.minute);
+      final newStartTime = tz.TZDateTime(location, destDate.year, destDate.month, destDate.day, copiedShift.startTime.hour, copiedShift.startTime.minute);
+      final newEndTime = tz.TZDateTime(location, destDate.year, destDate.month, destDate.day, copiedShift.endTime.hour, copiedShift.endTime.minute);
 
       final newShift = Shift(
         userId: copiedShift.userId,
         siteId: copiedShift.siteId,
         startTime: newStartTime,
         endTime: newEndTime,
-        shiftId: FirebaseFirestore.instance.collection('schedules').doc().id, // Generate a new unique ID
+        shiftId: FirebaseFirestore.instance.collection('schedules').doc().id,
         notes: copiedShift.notes,
       );
       newShiftsToSave.add(newShift.toMap());
@@ -299,7 +292,6 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
 
     await _fetchData();
   }
-  // --- END OF UPDATED FUNCTION ---
 
   void _startSelectionMode(Shift shift) {
     setState(() {
@@ -386,7 +378,6 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
   @override
   Widget build(BuildContext context) {
     final bool canFilter = widget.userProfile.role == 'admin';
-
     return Scaffold(
       appBar: _isSelectionMode ? _buildSelectionAppBar() : _buildDefaultAppBar(),
       body: _isLoading
@@ -400,30 +391,12 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
                 value: _selectedFilter,
                 isExpanded: true,
                 hint: const Text('Filter by Team...'),
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.filter_list),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(prefixIcon: Icon(Icons.filter_list), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 4), border: OutlineInputBorder()),
                 items: [
-                  const DropdownMenuItem<dynamic>(
-                    value: null,
-                    child: Text('All Staff', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                  ..._allManagers.map((manager) {
-                    final name = '${manager.firstName} ${manager.lastName}'.trim();
-                    return DropdownMenuItem<dynamic>(
-                      value: manager,
-                      child: Text('Team: ${name.isEmpty ? manager.email : name}'),
-                    );
-                  }),
+                  const DropdownMenuItem<dynamic>(value: null, child: Text('All Staff', style: TextStyle(fontWeight: FontWeight.bold))),
+                  ..._allManagers.map((manager) => DropdownMenuItem<dynamic>(value: manager, child: Text('Team: ${manager.fullName}'))),
                 ],
-                onChanged: (newValue) {
-                  setState(() {
-                    _selectedFilter = newValue;
-                  });
-                  _applyFilter();
-                },
+                onChanged: (newValue) { setState(() { _selectedFilter = newValue; }); _applyFilter(); },
               ),
             ),
 
@@ -444,13 +417,9 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
                 return Wrap(
                   alignment: WrapAlignment.center,
                   children: shifts.map((shift) => Container(
-                    width: 7,
-                    height: 7,
+                    width: 7, height: 7,
                     margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _siteColors[shift.siteId] ?? Colors.grey,
-                    ),
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: _siteColors[shift.siteId] ?? Colors.grey),
                   )).toList(),
                 );
               },
@@ -461,9 +430,7 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
             child: ValueListenableBuilder<List<Shift>>(
               valueListenable: _selectedShifts,
               builder: (context, value, _) {
-                if (value.isEmpty) {
-                  return const Center(child: Text('No shifts scheduled for this day.'));
-                }
+                if (value.isEmpty) { return const Center(child: Text('No shifts scheduled for this day.')); }
                 return ListView.builder(
                   itemCount: value.length,
                   itemBuilder: (context, index) {
@@ -472,8 +439,9 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
                     final siteName = _siteNames[shift.siteId] ?? 'Unknown Site';
                     final siteColor = _siteColors[shift.siteId] ?? Colors.grey;
                     final isSelected = _selectedShiftsForCopy.contains(shift);
-
                     final bool isPastShift = shift.startTime.isBefore(DateTime.now());
+                    final String startTime = DateFormat('h:mm a').format(shift.startTime);
+                    final String endTime = DateFormat('h:mm a').format(shift.endTime);
 
                     return Opacity(
                       opacity: isPastShift ? 0.6 : 1.0,
@@ -482,25 +450,15 @@ class _ManageSchedulePageState extends State<ManageSchedulePage> {
                         child: ListTile(
                           selected: isSelected,
                           selectedTileColor: Colors.blue.withOpacity(0.2),
-                          leading: _isSelectionMode
-                              ? Icon(isSelected ? Icons.check_box : Icons.check_box_outline_blank)
-                              : CircleAvatar(backgroundColor: siteColor, radius: 10),
+                          leading: _isSelectionMode ? Icon(isSelected ? Icons.check_box : Icons.check_box_outline_blank) : CircleAvatar(backgroundColor: siteColor, radius: 10),
                           title: Text(employeeName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('$siteName\n${DateFormat('h:mm a').format(shift.startTime)} - ${DateFormat('h:mm a').format(shift.endTime)}'),
+                          subtitle: Text('$siteName\n$startTime - $endTime'),
                           isThreeLine: true,
-                          trailing: isPastShift || _isSelectionMode
-                              ? null
-                              : IconButton(
+                          trailing: isPastShift || _isSelectionMode ? null : IconButton(
                             icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                             onPressed: () async {
-                              final confirmed = await _showDeleteConfirmationDialog(
-                                context: context,
-                                title: 'Delete Shift?',
-                                content: 'Are you sure you want to delete this shift for $employeeName?',
-                              );
-                              if (confirmed) {
-                                _deleteSingleShift(shift);
-                              }
+                              final confirmed = await _showDeleteConfirmationDialog(context: context, title: 'Delete Shift?', content: 'Are you sure you want to delete this shift for $employeeName?');
+                              if (confirmed) { _deleteSingleShift(shift); }
                             },
                           ),
                           onLongPress: isPastShift || _isSelectionMode ? null : () => _startSelectionMode(shift),

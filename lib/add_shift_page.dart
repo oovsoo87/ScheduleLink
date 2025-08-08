@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:timezone/timezone.dart' as tz; // NEW IMPORT
 import 'models/shift_model.dart';
 import 'models/user_profile.dart';
 import 'models/site_model.dart';
@@ -32,8 +33,6 @@ class _AddShiftPageState extends State<AddShiftPage> {
   TimeOfDay? _endTime;
   bool _isLoading = true;
   bool _isLocked = false;
-
-  // --- NEW: State to hold the selected preset index ---
   int? _selectedPresetIndex;
 
   bool get _isEditing => widget.shiftToEdit != null;
@@ -117,32 +116,33 @@ class _AddShiftPageState extends State<AddShiftPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all fields')));
       return;
     }
-    final startDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _startTime!.hour, _startTime!.minute);
+
+    // --- THIS IS THE FIX ---
+    // Create timezone-aware TZDateTime objects instead of standard DateTime objects.
+    final location = tz.getLocation('Europe/London');
+    final startDateTime = tz.TZDateTime(location, _selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _startTime!.hour, _startTime!.minute);
+    final endDateTime = tz.TZDateTime(location, _selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _endTime!.hour, _endTime!.minute);
+
     if (!_isEditing && startDateTime.isBefore(DateTime.now())) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: Cannot create a shift that starts in the past.'), backgroundColor: Colors.red));
       return;
     }
-    final double startTimeInMinutes = _startTime!.hour * 60.0 + _startTime!.minute;
-    final double endTimeInMinutes = _endTime!.hour * 60.0 + _endTime!.minute;
-    if (endTimeInMinutes <= startTimeInMinutes) {
+    if (endDateTime.isBefore(startDateTime) || endDateTime.isAtSameMomentAs(startDateTime)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error: End time must be after start time.'), backgroundColor: Colors.red));
       return;
     }
 
     setState(() => _isLoading = true);
-    final endDateTime = DateTime(_selectedDate!.year, _selectedDate!.month, _selectedDate!.day, _endTime!.hour, _endTime!.minute);
 
     final shiftToSave = Shift(
       userId: _selectedStaff!.uid,
-      startTime: startDateTime,
-      endTime: endDateTime,
+      startTime: startDateTime, // Pass the TZDateTime
+      endTime: endDateTime,   // Pass the TZDateTime
       shiftId: _isEditing ? widget.shiftToEdit!.shiftId : FirebaseFirestore.instance.collection('schedules').doc().id,
       siteId: _selectedSite!.id,
       notes: _notesController.text.trim(),
     );
-
-    // This check can be expanded later if needed
-    // final bool hasConflict = await _checkForConflicts(shiftToSave);
+    // --- END OF FIX ---
 
     final startOfWeek = _selectedDate!.subtract(Duration(days: _selectedDate!.weekday - 1));
     final weekStartDate = DateTime.utc(startOfWeek.year, startOfWeek.month, startOfWeek.day);
@@ -199,7 +199,6 @@ class _AddShiftPageState extends State<AddShiftPage> {
               onChanged: _isLocked ? null : (Site? newValue) {
                 setState(() {
                   _selectedSite = newValue;
-                  // --- NEW: Reset preset index when site changes ---
                   _selectedPresetIndex = null;
                   _filterStaffForSite(newValue);
                 });
@@ -210,13 +209,12 @@ class _AddShiftPageState extends State<AddShiftPage> {
             ),
             if (_selectedSite != null && _selectedSite!.presetShifts.isNotEmpty) ...[
               const SizedBox(height: 16),
-              // --- UPDATED: Preset Shift Dropdown now uses an integer index ---
               DropdownButtonFormField<int>(
                 value: _selectedPresetIndex,
                 hint: const Text('Select a Preset Shift (Optional)'),
                 onChanged: _isLocked ? null : (int? selectedIndex) {
                   if (selectedIndex == null) return;
-                  final preset = _selectedSite!.presetShifts[selectedIndex]; // Look up preset by index
+                  final preset = _selectedSite!.presetShifts[selectedIndex];
                   final startTimeString = preset['startTime'];
                   final endTimeString = preset['endTime'];
                   if (startTimeString != null && endTimeString != null) {
@@ -233,7 +231,6 @@ class _AddShiftPageState extends State<AddShiftPage> {
                     }
                   }
                 },
-                // Build items using the index as the value
                 items: _selectedSite!.presetShifts.asMap().entries.map((entry) {
                   int index = entry.key;
                   Map<String, String> preset = entry.value;
@@ -247,7 +244,7 @@ class _AddShiftPageState extends State<AddShiftPage> {
               value: _selectedStaff,
               hint: Text(_selectedSite == null ? 'Please select a site first' : 'Select Staff Member'),
               onChanged: _isLocked || _selectedSite == null ? null : (UserProfile? newValue) => setState(() => _selectedStaff = newValue),
-              items: _filteredStaffList.map((user) { final name = '${user.firstName} ${user.lastName}'.trim(); return DropdownMenuItem<UserProfile>(value: user, child: Text(name.isEmpty ? user.email : name)); }).toList(),
+              items: _filteredStaffList.map((user) => DropdownMenuItem<UserProfile>(value: user, child: Text(user.fullName))).toList(),
               validator: (value) => value == null ? 'Please select a staff member' : null,
               decoration: InputDecoration(
                 labelText: 'Staff Member',

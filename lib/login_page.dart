@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -18,6 +19,18 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
 
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  void _showErrorSnackbar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
+  }
+
   Future<void> _signIn() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
@@ -27,7 +40,7 @@ class _LoginPageState extends State<LoginPage> {
         password: _passwordController.text.trim(),
       );
     } on FirebaseAuthException catch (e) {
-      if (mounted) _showErrorSnackbar(e.message ?? "An unknown error occurred.");
+      _showErrorSnackbar(e.message ?? "An unknown error occurred.");
     } finally {
       if(mounted) setState(() => _isLoading = false);
     }
@@ -37,24 +50,34 @@ class _LoginPageState extends State<LoginPage> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
     try {
-      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(email: _emailController.text.trim(), password: _passwordController.text.trim());
-      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({'uid': userCredential.user!.uid, 'email': _emailController.text.trim(), 'firstName': '', 'lastName': '', 'phoneNumber': '', 'role': 'staff', 'assignedSiteIds': [], 'isActive': true, 'timeOffQuota': 0.0, 'defaultDailyHours': 8.0});
+      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text.trim()
+      );
+
+      // --- NEW: Send verification email ---
+      await userCredential.user?.sendEmailVerification();
+
+      // Create the user profile document in Firestore
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).set({
+        'uid': userCredential.user!.uid,
+        'email': _emailController.text.trim(),
+        'firstName': '', 'lastName': '', 'phoneNumber': '',
+        'role': 'staff', 'assignedSiteIds': [], 'isActive': true,
+        'timeOffQuota': 0.0, 'defaultDailyHours': 8.0
+      });
+
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Verification email sent! Please check your inbox.'), backgroundColor: Colors.green)
+        );
+      }
+
     } on FirebaseAuthException catch (e) {
-      if (mounted) _showErrorSnackbar(e.message ?? "An unknown error occurred.");
+      _showErrorSnackbar(e.message ?? "An unknown error occurred.");
     } finally {
       if(mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showErrorSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
   }
 
   @override
@@ -65,7 +88,6 @@ class _LoginPageState extends State<LoginPage> {
           padding: const EdgeInsets.all(24.0),
           child: Form(
             key: _formKey,
-            // --- UPDATED: Wrapped in a ListView to prevent overflow ---
             child: ListView(
               children: [
                 const SizedBox(height: 48),

@@ -164,49 +164,31 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Schedule'),
+        title: Text('My Schedule'.toUpperCase()),
         actions: [
           if (currentUser != null)
             StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('notifications')
-                  .where('userId', isEqualTo: currentUser.uid)
-                  .where('isRead', isEqualTo: false)
-                  .snapshots(),
+              stream: FirebaseFirestore.instance.collection('notifications').where('userId', isEqualTo: currentUser.uid).where('isRead', isEqualTo: false).snapshots(),
               builder: (context, snapshot) {
                 final unreadCount = snapshot.data?.docs.length ?? 0;
                 return IconButton(
-                  icon: Badge(
-                    label: Text('$unreadCount'),
-                    isLabelVisible: unreadCount > 0,
-                    child: const Icon(Icons.notifications_outlined),
-                  ),
-                  onPressed: () {
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationsPage()));
-                  },
+                  icon: Badge(label: Text('$unreadCount'), isLabelVisible: unreadCount > 0, child: const Icon(Icons.notifications_outlined)),
+                  onPressed: () { Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationsPage())); },
                 );
               },
             ),
           if (canManage)
             IconButton(
-              onPressed: () {
-                // This line passes the userProfile to the next page
-                Navigator.push(context, MaterialPageRoute(builder: (context) => ManageSchedulePage(userProfile: widget.userProfile)));
-              },
+              onPressed: () { Navigator.push(context, MaterialPageRoute(builder: (context) => ManageSchedulePage(userProfile: widget.userProfile))); },
               icon: const Icon(Icons.edit_calendar),
             ),
           IconButton(
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsPage()));
-            },
-            icon: const Icon(Icons.settings),
-            tooltip: 'Settings',
+            onPressed: () { Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsPage())); },
+            icon: const Icon(Icons.settings), tooltip: 'Settings',
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
+      body: _isLoading ? const Center(child: CircularProgressIndicator()) : Column(
         children: [
           TableCalendar<Shift>(
             firstDay: DateTime.utc(2020, 1, 1),
@@ -217,24 +199,16 @@ class _HomePageState extends State<HomePage> {
             onDaySelected: _onDaySelected,
             eventLoader: _getShiftsForDay,
             calendarFormat: _calendarFormat,
-            onFormatChanged: (format) {
-              setState(() {
-                _calendarFormat = format;
-              });
-            },
+            onFormatChanged: (format) { setState(() { _calendarFormat = format; }); },
             calendarBuilders: CalendarBuilders(
               markerBuilder: (context, day, shifts) {
                 if (shifts.isEmpty) return null;
                 return Wrap(
                   alignment: WrapAlignment.center,
                   children: shifts.map((shift) => Container(
-                    width: 7,
-                    height: 7,
+                    width: 7, height: 7,
                     margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _siteColors[shift.siteId] ?? Colors.grey,
-                    ),
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: _siteColors[shift.siteId] ?? Colors.grey),
                   )).toList(),
                 );
               },
@@ -245,9 +219,7 @@ class _HomePageState extends State<HomePage> {
             child: ValueListenableBuilder<List<Shift>>(
               valueListenable: _selectedShifts,
               builder: (context, value, _) {
-                if (value.isEmpty) {
-                  return const Center(child: Text('No shifts on this day.'));
-                }
+                if (value.isEmpty) { return const Center(child: Text('No shifts on this day.')); }
                 return ListView.builder(
                   itemCount: value.length,
                   itemBuilder: (context, index) {
