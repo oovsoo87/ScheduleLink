@@ -27,8 +27,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
   bool _isGenerating = false;
   DateTime _displayDate = DateTime.now();
 
-  final _customNameController = TextEditingController();
-
   List<Site> _siteList = [];
   List<UserProfile> _staffList = [];
   Site? _selectedSite;
@@ -45,7 +43,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
 
   @override
   void dispose() {
-    _customNameController.dispose();
     super.dispose();
   }
 
@@ -211,41 +208,29 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
     final DateTime endOfWeek = startOfWeek.add(const Duration(days: 6));
     final String formattedSundayDate = DateFormat('dd/MM/yy').format(endOfWeek);
     final String mainHeader = 'Team Weekly Schedule for Week Ending $formattedSundayDate';
-    final String customName = _customNameController.text.trim();
 
     pdf.addPage(
-        pw.Page(
+        pw.MultiPage(
           pageFormat: PdfPageFormat.a4.landscape,
           theme: theme,
+          header: (context) => pw.Text(mainHeader, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
           build: (context) {
-            return pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(mainHeader, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
-                  if (customName.isNotEmpty)
-                    pw.Padding(
-                      padding: const pw.EdgeInsets.only(top: 4, bottom: 15),
-                      child: pw.Text(customName, style: pw.TextStyle(fontSize: 18, fontStyle: pw.FontStyle.italic)),
-                    )
-                  else
-                    pw.SizedBox(height: 20),
-                  pw.Table(
-                    border: pw.TableBorder.all(color: PdfColors.grey400),
-                    // --- THIS IS THE UPDATED COLUMN WIDTH LOGIC ---
-                    columnWidths: {
-                      0: const pw.FlexColumnWidth(1.5), // Staff Member column
-                      1: const pw.FlexColumnWidth(1.0), // Day columns
-                      2: const pw.FlexColumnWidth(1.0),
-                      3: const pw.FlexColumnWidth(1.0),
-                      4: const pw.FlexColumnWidth(1.0),
-                      5: const pw.FlexColumnWidth(1.0),
-                      6: const pw.FlexColumnWidth(1.0),
-                      7: const pw.FlexColumnWidth(1.0),
-                    },
-                    children: tableRows,
-                  )
-                ]
-            );
+            return [
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey400),
+                columnWidths: const {
+                  0: pw.FlexColumnWidth(2.0), // Staff Member column is wider
+                  1: pw.FlexColumnWidth(1.0), // All day columns are equal
+                  2: pw.FlexColumnWidth(1.0),
+                  3: pw.FlexColumnWidth(1.0),
+                  4: pw.FlexColumnWidth(1.0),
+                  5: pw.FlexColumnWidth(1.0),
+                  6: pw.FlexColumnWidth(1.0),
+                  7: pw.FlexColumnWidth(1.0),
+                },
+                children: tableRows,
+              )
+            ];
           },
         )
     );
@@ -289,7 +274,7 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
           ? const Center(child: CircularProgressIndicator())
           : Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
+        child: ListView( // Use ListView to prevent overflow with the keyboard
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -320,14 +305,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
               ],
               onChanged: (user) => setState(() => _selectedStaff = user),
               decoration: const InputDecoration(labelText: 'Filter by Staff Member', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _customNameController,
-              decoration: const InputDecoration(
-                labelText: 'Custom Report Name (Optional)',
-                border: OutlineInputBorder(),
-              ),
             ),
             const SizedBox(height: 24),
             SizedBox(
