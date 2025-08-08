@@ -29,10 +29,13 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
 
   final _customNameController = TextEditingController();
 
+  List<Site> _siteList = [];
   List<UserProfile> _staffList = [];
+  Site? _selectedSite;
+  UserProfile? _selectedStaff;
+
   Map<String, String> _siteNames = {};
   Map<String, String> _siteColorsHex = {};
-  Set<String> _selectedStaffIds = {};
 
   @override
   void initState() {
@@ -62,9 +65,9 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
       if (mounted) {
         setState(() {
           _staffList = staffSnapshot.docs.map((doc) => UserProfile.fromFirestore(doc)).toList();
+          _siteList = sites;
           _siteNames = {for (var site in sites) site.id: site.siteName};
           _siteColorsHex = {for (var site in sites) site.id: site.siteColor};
-          _selectedStaffIds = _staffList.map((user) => user.uid).toSet();
           _isLoadingFilters = false;
         });
       }
@@ -74,50 +77,6 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
         setState(() => _isLoadingFilters = false);
       }
     }
-  }
-
-  Future<void> _showStaffFilterDialog() async {
-    await showDialog(
-      context: context,
-      builder: (context) {
-        final tempSelectedIds = _selectedStaffIds.toSet();
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Filter Staff'),
-              content: SizedBox(
-                width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _staffList.length,
-                  itemBuilder: (context, index) {
-                    final user = _staffList[index];
-                    final name = '${user.firstName} ${user.lastName}'.trim();
-                    return CheckboxListTile(
-                      title: Text(name.isEmpty ? user.email : name),
-                      value: tempSelectedIds.contains(user.uid),
-                      onChanged: (isSelected) {
-                        setDialogState(() {
-                          if (isSelected ?? false) {
-                            tempSelectedIds.add(user.uid);
-                          } else {
-                            tempSelectedIds.remove(user.uid);
-                          }
-                        });
-                      },
-                    );
-                  },
-                ),
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-                TextButton(onPressed: () { setState(() => _selectedStaffIds = tempSelectedIds); Navigator.of(context).pop(); }, child: const Text('Apply')),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   Future<void> _generateReport() async {
@@ -156,8 +115,18 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
     final boldFont = pw.Font.ttf(await rootBundle.load("assets/fonts/Poppins-Bold.ttf"));
     final theme = pw.ThemeData.withFont(base: font, bold: boldFont);
 
-    final filteredShifts = allShifts.where((shift) => _selectedStaffIds.contains(shift.userId)).toList();
-    final staffInReport = _staffList.where((user) => _selectedStaffIds.contains(user.uid)).toList();
+    var filteredShifts = allShifts;
+    if (_selectedSite != null) {
+      filteredShifts = filteredShifts.where((shift) => shift.siteId == _selectedSite!.id).toList();
+    }
+    if (_selectedStaff != null) {
+      filteredShifts = filteredShifts.where((shift) => shift.userId == _selectedStaff!.uid).toList();
+    }
+
+    final staffInReport = _staffList.where((user) {
+      if (_selectedStaff != null) return user.uid == _selectedStaff!.uid;
+      return filteredShifts.any((shift) => shift.userId == user.uid);
+    }).toList();
 
     final Map<String, Map<int, List<Shift>>> userShiftsByDay = {};
     for (var user in staffInReport) {
@@ -190,14 +159,13 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
 
     for (var i = 0; i < staffInReport.length; i++) {
       final user = staffInReport[i];
-      final name = '${user.firstName} ${user.lastName}'.trim();
+      final name = user.fullName;
       final cells = <pw.Widget>[];
 
       cells.add(pw.Container(
           padding: const pw.EdgeInsets.all(5),
           alignment: pw.Alignment.centerLeft,
-          // --- UPDATED: Staff name is now bold ---
-          child: pw.Text(name.isEmpty ? user.email : name, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))
+          child: pw.Text(name, style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold))
       ));
 
       for (int j = 0; j < 7; j++) {
@@ -213,24 +181,19 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                     final siteName = _siteNames[shift.siteId] ?? 'N/A';
                     final shiftText = '${DateFormat('HH:mm').format(shift.startTime)}-${DateFormat('HH:mm').format(shift.endTime)}';
 
-                    return pw.Padding(
-                      padding: const pw.EdgeInsets.only(bottom: 4),
-                      child: pw.Row(
+                    return pw.Column(
+                        crossAxisAlignment: pw.CrossAxisAlignment.start,
                         children: [
-                          pw.Container(
-                            width: 6, height: 6,
-                            margin: const pw.EdgeInsets.only(right: 4, top: 2),
-                            decoration: pw.BoxDecoration(color: siteColor, shape: pw.BoxShape.circle),
+                          pw.Text(shiftText, style: const pw.TextStyle(fontSize: 8)),
+                          pw.Row(
+                              children: [
+                                pw.Container(width: 5, height: 5, decoration: pw.BoxDecoration(color: siteColor, shape: pw.BoxShape.circle)),
+                                pw.SizedBox(width: 3),
+                                pw.Text(siteName, style: const pw.TextStyle(fontSize: 7, color: PdfColors.grey600)),
+                              ]
                           ),
-                          pw.Expanded(
-                            child: pw.Text(
-                              // --- UPDATED: Site name is now on a new line ---
-                              '$shiftText\n$siteName',
-                              style: const pw.TextStyle(fontSize: 8),
-                            ),
-                          ),
-                        ],
-                      ),
+                          pw.SizedBox(height: 4),
+                        ]
                     );
                   }).toList()
               ),
@@ -268,15 +231,16 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                     pw.SizedBox(height: 20),
                   pw.Table(
                     border: pw.TableBorder.all(color: PdfColors.grey400),
+                    // --- THIS IS THE UPDATED COLUMN WIDTH LOGIC ---
                     columnWidths: {
-                      0: const pw.FlexColumnWidth(2.0),
-                      1: const pw.FlexColumnWidth(1.5),
-                      2: const pw.FlexColumnWidth(1.5),
-                      3: const pw.FlexColumnWidth(1.5),
-                      4: const pw.FlexColumnWidth(1.5),
-                      5: const pw.FlexColumnWidth(1.5),
-                      6: const pw.FlexColumnWidth(1.5),
-                      7: const pw.FlexColumnWidth(1.5),
+                      0: const pw.FlexColumnWidth(1.5), // Staff Member column
+                      1: const pw.FlexColumnWidth(1.0), // Day columns
+                      2: const pw.FlexColumnWidth(1.0),
+                      3: const pw.FlexColumnWidth(1.0),
+                      4: const pw.FlexColumnWidth(1.0),
+                      5: const pw.FlexColumnWidth(1.0),
+                      6: const pw.FlexColumnWidth(1.0),
+                      7: const pw.FlexColumnWidth(1.0),
                     },
                     children: tableRows,
                   )
@@ -336,13 +300,26 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
               ],
             ),
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.filter_list),
-                label: Text('Filter Staff (${_selectedStaffIds.length}/${_staffList.length})'),
-                onPressed: _showStaffFilterDialog,
-              ),
+            DropdownButtonFormField<Site>(
+              value: _selectedSite,
+              hint: const Text('All Sites'),
+              items: [
+                const DropdownMenuItem<Site>(value: null, child: Text('All Sites')),
+                ..._siteList.map((site) => DropdownMenuItem(value: site, child: Text(site.siteName))),
+              ],
+              onChanged: (site) => setState(() => _selectedSite = site),
+              decoration: const InputDecoration(labelText: 'Filter by Site', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<UserProfile>(
+              value: _selectedStaff,
+              hint: const Text('All Staff'),
+              items: [
+                const DropdownMenuItem<UserProfile>(value: null, child: Text('All Staff')),
+                ..._staffList.map((user) => DropdownMenuItem(value: user, child: Text(user.fullName))),
+              ],
+              onChanged: (user) => setState(() => _selectedStaff = user),
+              decoration: const InputDecoration(labelText: 'Filter by Staff Member', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 16),
             TextFormField(
@@ -352,7 +329,7 @@ class _WeeklyGridReportPageState extends State<WeeklyGridReportPage> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,
               child: _isGenerating
