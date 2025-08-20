@@ -2,87 +2,74 @@
 
 import 'package:flutter/material.dart';
 import 'clocker_report_page.dart';
-import 'weekly_manager_report_page.dart'; // UPDATED import
 import 'scheduled_vs_clocked_report_page.dart';
 import 'weekly_grid_report_page.dart';
-import 'payroll_page.dart';
-import 'time_off_report_page.dart';
+import 'weekly_manager_report_page.dart';
 
 class ReportsPage extends StatelessWidget {
   const ReportsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // A list to hold all the report options
+    final List<Map<String, dynamic>> reportItems = [
+      {
+        'icon': Icons.timer,
+        'title': 'Clocker Report',
+        'subtitle': 'Detailed clock-in/out history.',
+        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ClockerReportPage())),
+      },
+      {
+        'icon': Icons.compare_arrows,
+        'title': 'Scheduled vs. Clocked',
+        'subtitle': 'Compare scheduled hours to actual clocked hours.',
+        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ScheduledVsClockedReportPage())),
+      },
+      {
+        'icon': Icons.grid_on,
+        'title': 'Weekly Grid Report',
+        'subtitle': 'View weekly hours in a grid format.',
+        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WeeklyGridReportPage())),
+      },
+      {
+        'icon': Icons.person_outline,
+        'title': 'Weekly Manager Report',
+        'subtitle': 'A weekly summary for managers.',
+        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WeeklyManagerReportPage())),
+      },
+      {
+        'icon': Icons.payment,
+        'title': 'Export to Payroll CSV',
+        'subtitle': 'Generate a CSV file for payroll processing.',
+        'onTap': () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Coming Soon!'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        },
+      },
+    ];
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Generate Reports'),
+        title: const Text('Reports'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.payments_outlined),
-              title: const Text('Payroll Export'),
-              subtitle: const Text('Generate CSV files for Sage and Xero.'),
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const PayrollPage()));
-              },
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.beach_access_outlined),
-              title: const Text('Time Off Records'),
-              subtitle: const Text('CSV/PDF of all approved/denied time off.'),
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const TimeOffReportPage()));
-              },
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.calendar_view_week),
-              title: const Text('Weekly Schedule PDF'),
-              subtitle: const Text('Printable grid view of the team\'s schedule.'),
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const WeeklyGridReportPage()));
-              },
-            ),
-          ),
-          // --- THIS LIST TILE IS UPDATED ---
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.assessment_outlined),
-              title: const Text('Weekly Manager Report'),
-              subtitle: const Text('PDF of projections & scheduled staff by site.'),
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const WeeklyManagerReportPage()));
-              },
-            ),
-          ),
-          // --- END UPDATE ---
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.compare_arrows),
-              title: const Text('Scheduled vs. Clocked-In'),
-              subtitle: const Text('PDF comparing scheduled vs. actual hours.'),
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const ScheduledVsClockedReportPage()));
-              },
-            ),
-          ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.timer_outlined),
-              title: const Text('Detailed Clocker Report'),
-              subtitle: const Text('CSV/PDF of all clock-in/out entries.'),
-              onTap: () {
-                Navigator.push(context, MaterialPageRoute(builder: (context) => const ClockerReportPage()));
-              },
-            ),
-          ),
-        ],
+      // Use ListView.separated to create a list with dividers
+      body: ListView.separated(
+        itemCount: reportItems.length,
+        separatorBuilder: (context, index) => const Divider(), // Adds a line between items
+        itemBuilder: (context, index) {
+          final item = reportItems[index];
+          return ListTile(
+            leading: Icon(item['icon'], color: Theme.of(context).primaryColor),
+            title: Text(item['title'], style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(item['subtitle']),
+            trailing: const Icon(Icons.arrow_forward_ios),
+            onTap: item['onTap'],
+          );
+        },
       ),
     );
   }

@@ -15,6 +15,8 @@ import 'package:intl/intl.dart';
 import 'models/site_model.dart';
 import 'models/user_profile.dart';
 
+// --- No changes to ReportRow or the top part of the _ClockerReportPageState class ---
+
 class ReportRow {
   final String name;
   final String site;
@@ -182,12 +184,53 @@ class _ClockerReportPageState extends State<ClockerReportPage> {
     return '${point.latitude.toStringAsFixed(5)}, ${point.longitude.toStringAsFixed(5)}';
   }
 
+  // --- UPDATED CSV FUNCTION WITH ERROR HANDLING ---
   Future<void> _generateAndUploadCsv(List<ReportRow> data) async {
-    // This function is unchanged
+    final List<List<dynamic>> rows = [];
+    rows.add([
+      'Name', 'Site', 'Date', 'Clock In Time', 'Clock Out Time', 'Total Hours',
+      'Clock In Address', 'Clock Out Address', 'Clock In Coordinates', 'Clock Out Coordinates',
+    ]);
+
+    for (final row in data) {
+      rows.add([
+        row.name, row.site, DateFormat('dd/MM/yyyy').format(row.clockIn),
+        DateFormat('HH:mm:ss').format(row.clockIn),
+        row.clockOut != null ? DateFormat('HH:mm:ss').format(row.clockOut!) : 'N/A',
+        row.totalHours.toStringAsFixed(4), row.clockInAddress, row.clockOutAddress,
+        _formatCoordinates(row.clockInCoordinates), _formatCoordinates(row.clockOutCoordinates),
+      ]);
+    }
+
+    final String csv = const ListToCsvConverter().convert(rows);
+    final fileName = 'clocker_report_${DateTime.now().toIso8601String()}.csv';
+    final directory = await getApplicationDocumentsDirectory();
+    final path = '${directory.path}/$fileName';
+    final file = File(path);
+    await file.writeAsString(csv);
+    await _uploadFileToStorage(file, fileName);
+
+    // --- Added Error Handling Block ---
+    try {
+      final result = await OpenFile.open(path);
+      if (result.type != ResultType.done) {
+        throw Exception('Could not open file: ${result.message}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the report. Please make sure you have an app that can open CSV files (like Google Sheets).'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
   }
 
-  // --- THIS PDF FUNCTION IS REBUILT TO FIX THE ERRORS AND ADD STYLING ---
+  // --- UPDATED PDF FUNCTION WITH ERROR HANDLING ---
   Future<void> _generateAndUploadPdf(List<ReportRow> data) async {
+    // ... (all the PDF generation logic is the same)
     final pdf = pw.Document();
 
     final font = pw.Font.ttf(await rootBundle.load("assets/fonts/Poppins-Regular.ttf"));
@@ -195,7 +238,6 @@ class _ClockerReportPageState extends State<ClockerReportPage> {
     final theme = pw.ThemeData.withFont(base: font, bold: boldFont);
     final turquoiseColor = PdfColor.fromHex('4DB6AC');
 
-    // Group all data by site first
     final Map<String, List<ReportRow>> groupedBySite = {};
     for (final row in data) {
       groupedBySite.putIfAbsent(row.site, () => []).add(row);
@@ -207,7 +249,6 @@ class _ClockerReportPageState extends State<ClockerReportPage> {
     bool firstSite = true;
 
     for (final site in sortedSites) {
-      // Add a turquoise separator before each new site group (except the first one)
       if (!firstSite) {
         pageWidgets.add(pw.Container(
           height: 8,
@@ -220,7 +261,6 @@ class _ClockerReportPageState extends State<ClockerReportPage> {
       final siteId = siteEntries.first.siteId;
       final siteColorHex = _siteColorsHex[siteId] ?? '9E9E9E';
 
-      // Site Header with colored dot
       pageWidgets.add(
           pw.Header(
               level: 1,
@@ -285,9 +325,26 @@ class _ClockerReportPageState extends State<ClockerReportPage> {
     final file = File(path);
     await file.writeAsBytes(await pdf.save());
     await _uploadFileToStorage(file, fileName);
-    await OpenFile.open(path);
+
+    // --- Added Error Handling Block ---
+    try {
+      final result = await OpenFile.open(path);
+      if (result.type != ResultType.done) {
+        throw Exception('Could not open file: ${result.message}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the report. Please make sure you have an app that can open PDF files.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
   }
 
+  // --- No other changes below this line ---
   Future<void> _uploadFileToStorage(File file, String fileName) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
