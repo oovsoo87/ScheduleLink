@@ -33,6 +33,7 @@ dependencies:
   google_maps_flutter: ^2.6.1
   timezone: ^0.9.4
   share_plus: ^7.2.2
+  firebase_messaging: ^16.0.0
 
 dev_dependencies:
   flutter_test:
